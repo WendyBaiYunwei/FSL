@@ -61,10 +61,11 @@ class OmniglotTask(object):
         self.train_roots = []
         self.test_roots = []
         for c in class_folders:
-
-            temp = [os.path.join(c, x) for x in os.listdir(c)]
+            temp = []
+            for x in os.listdir(c):
+                # if os.path.isdir(x):
+                temp.append(os.path.join(c, x))
             samples[c] = random.sample(temp, len(temp))
-
             self.train_roots += samples[c][:train_num]
             self.test_roots += samples[c][train_num:train_num+test_num]
 
@@ -138,7 +139,7 @@ class ClassBalancedSampler(Sampler):
 
 def get_data_loader(task, num_per_class=1, split='train',shuffle=True,rotation=0):
     # NOTE: batch size here is # instances PER CLASS
-    normalize = transforms.Normalize(mean=[0.92206, 0.92206, 0.92206], std=[0.08426, 0.08426, 0.08426])
+    normalize = transforms.Normalize(mean=[0.92206,], std=[0.08426,])
 
     dataset = Omniglot(task,split=split,transform=transforms.Compose([Rotate(rotation),transforms.ToTensor(),normalize]))
 
