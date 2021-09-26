@@ -1,11 +1,3 @@
-#-------------------------------------
-# Project: Learning to Compare: Relation Network for Few-Shot Learning
-# Date: 2017.9.21
-# Author: Flood Sung
-# All Rights Reserved
-#-------------------------------------
-
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,33 +12,16 @@ import os
 import math
 import argparse
 import random
-from PIL import Image
 
 parser = argparse.ArgumentParser(description="One Shot Visual Recognition")
-parser.add_argument("-f","--feature_dim",type = int, default = 64)
-parser.add_argument("-r","--relation_dim",type = int, default = 8)
-parser.add_argument("-w","--class_num",type = int, default = 5)
-parser.add_argument("-s","--sample_num_per_class",type = int, default = 1)
-parser.add_argument("-b","--batch_num_per_class",type = int, default = 15)
 parser.add_argument("-e","--episode",type = int, default = 2) #1000
-parser.add_argument("-t","--test_episode", type = int, default = 1000)
 parser.add_argument("-l","--learning_rate", type = float, default = 0.001)
-parser.add_argument("-g","--gpu",type=int, default=0)
-parser.add_argument("-u","--hidden_unit",type=int,default=10)
 args = parser.parse_args()
 
 
 # Hyper Parameters
-FEATURE_DIM = args.feature_dim
-RELATION_DIM = args.relation_dim
-CLASS_NUM = args.class_num
-SAMPLE_NUM_PER_CLASS = args.sample_num_per_class
-BATCH_NUM_PER_CLASS = args.batch_num_per_class
 EPISODE = args.episode
-TEST_EPISODE = args.test_episode
 LEARNING_RATE = args.learning_rate
-GPU = args.gpu
-HIDDEN_UNIT = args.hidden_unit
 
 class CNNEncoder(nn.Module):
     def __init__(self):
@@ -92,6 +67,11 @@ def weights_init(m):
         m.weight.data.normal_(0, 0.01)
         m.bias.data = torch.ones(m.bias.data.size())
 
+def get_loss(out, target):
+    # shape: 512*7*7
+    loss = torch.sum(torch.sum(torch.abs(out - target), 3), 2)
+    return torch.squeeze(loss)
+
 def main():
     device = torch.device("cuda")
     # Step 2: init neural networks
@@ -119,22 +99,19 @@ def main():
                 transforms.ToTensor(),
                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     transform2 = transforms.Compose(
-                [transforms.Resize((84, 84)),
+                [transforms.Resize((34, 34)),
                 transforms.ToTensor(),
                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-    trainset_base = torchvision.datasets.CIFAR10(root='./data', train=True,
-                                    download=True, transform=transform)
-    trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
+    trainset_base = torchvision.datasets.CIFAR10(root='./cifar-data', train=True,
+                                    download=False, transform=transform)
+    trainset = torchvision.datasets.CIFAR10(root='./cifar-data', train=True,
                                     download=False, transform=transform2)
+
     # Step 3: build graph
     print("Training...")
 
-    last_accuracy = 0.0
-
+    EPISODE = 2
     for episode in range(EPISODE):
-
-        degrees = random.choice([0,90,180,270])
-
         sample_dataloader = torch.utils.data.DataLoader(trainset, batch_size=1, shuffle=False)
         base_dataloader = torch.utils.data.DataLoader(trainset_base, batch_size=1, shuffle=False)
 
@@ -143,34 +120,27 @@ def main():
         base, _ = base_dataloader.__iter__().next()
 
         # calculate features
-        sample_features = feature_encoder(Variable(samples).to(device)) # 5(4)x64*5*5
+        sample_features = feature_encoder(Variable(samples).to(device))
         # sample_features = sample_features.view(CLASS_NUM,SAMPLE_NUM_PER_CLASS,FEATURE_DIM,5,5)
-        
-        # baseline_features = vgg16(Variable(base).cuda(GPU))
 
         print("sample feature size:", sample_features.size())
-
-        # plt.figure(figsize=(19, 19))
-        # plt.imshow(sample_features[0, 0, :, :], cmap='gray')
-        # print("baseline feature size:", baseline_features.size())
         
-        im = Image.fromarray(sample_features[0][0].cpu().detach().numpy()) #512*19*19
-        im_resized = im.resize((7, 7))
-        sample_arr = np.asarray(im_resized)
 
-        print(sample_arr.shape)
-        break
+        baseline_features = vgg16(Variable(base).to(device)) # n * 512 * 7 * 7
 
+        #redo
+        loss = get_loss(sample_features, baseline_features)
         feature_encoder.zero_grad()
+        # gradient of features w.r.t loss
+        loss.backward(gradient = loss)
 
-        loss.backward()
-
-        torch.nn.utils.clip_grad_norm(feature_encoder.parameters(),0.5)
+        # torch.nn.utils.clip_grad_norm(feature_encoder.parameters(),0.5)
 
         feature_encoder_optim.step()
 
-        if (episode+1)%100 == 0:
-                print("episode:",episode+1,"loss",loss.data)
+        print("episode:",episode+1)
+
+    print("Done")
 
 if __name__ == '__main__':
     main()
