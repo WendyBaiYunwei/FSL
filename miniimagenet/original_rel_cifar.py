@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.optim.lr_scheduler import StepLR
 import numpy as np
-import task_generator as tg
+import cifar_generator as tg
 import os
 import math
 import argparse
@@ -51,6 +51,37 @@ def mean_confidence_interval(data, confidence=0.95):
     m, se = np.mean(a), scipy.stats.sem(a)
     h = se * sp.stats.t._ppf((1+confidence)/2., n-1)
     return m,h
+
+class CNNEncoder(nn.Module):
+    """docstring for ClassName"""
+    def __init__(self):
+        super(CNNEncoder, self).__init__()
+        self.layer1 = nn.Sequential(
+                        nn.Conv2d(3,64,kernel_size=3,padding=0),
+                        nn.BatchNorm2d(64, momentum=1, affine=True),
+                        nn.ReLU(),
+                        nn.MaxPool2d(2))
+        self.layer2 = nn.Sequential(
+                        nn.Conv2d(64,64,kernel_size=3,padding=0),
+                        nn.BatchNorm2d(64, momentum=1, affine=True),
+                        nn.ReLU(),
+                        nn.MaxPool2d(2))
+        self.layer3 = nn.Sequential(
+                        nn.Conv2d(64,64,kernel_size=3,padding=1),
+                        nn.BatchNorm2d(64, momentum=1, affine=True),
+                        nn.ReLU())
+        self.layer4 = nn.Sequential(
+                        nn.Conv2d(64,64,kernel_size=3,padding=1),
+                        nn.BatchNorm2d(64, momentum=1, affine=True),
+                        nn.ReLU())
+
+    def forward(self,x):
+        out = self.layer1(x)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        out = self.layer4(out)
+        #out = out.view(out.size(0),-1)
+        return out # 64
 
 class RelationNetwork(nn.Module):
     """docstring for RelationNetwork"""
@@ -93,7 +124,13 @@ def weights_init(m):
         m.bias.data = torch.ones(m.bias.data.size())
 
 def main():
+    # Step 1: init data folders
+    print("init data folders")
+    # init character folders for dataset construction
     metatrain_folders,metatest_folders = tg.mini_imagenet_folders()
+
+    # Step 2: init neural networks
+    print("init neural networks")
 
     feature_encoder = CNNEncoder()
     relation_network = RelationNetwork(FEATURE_DIM,RELATION_DIM)
@@ -109,12 +146,12 @@ def main():
     relation_network_optim = torch.optim.Adam(relation_network.parameters(),lr=LEARNING_RATE)
     relation_network_scheduler = StepLR(relation_network_optim,step_size=100000,gamma=0.5)
 
-    if os.path.isdir('checkpoint'):
-        print('==> Resuming from checkpoint..')
-        checkpoint = torch.load('./checkpoint/ckpt.pth')
-        feature_encoder.load_state_dict(checkpoint['feature_encoder'])
-    else:
-        feature_encoder.apply(weights_init)
+    if os.path.exists(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
+        feature_encoder.load_state_dict(torch.load(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
+        print("load feature encoder success")
+    if os.path.exists(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
+        relation_network.load_state_dict(torch.load(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
+        print("load relation network success")
 
     # Step 3: build graph
     print("Training...")
