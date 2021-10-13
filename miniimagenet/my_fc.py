@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from torch.autograd import Variable
 
 class MyLinearLayer(nn.Module):
     def __init__(self, h_in, w_in, size_channel):
@@ -10,15 +11,15 @@ class MyLinearLayer(nn.Module):
         self.weight = nn.Parameter(weight)
         bias = torch.Tensor(h_in * w_in, size_channel)
         self.bias = nn.Parameter(bias)
+        self.device = torch.device("cuda")
 
     #N * 512 * 7 * 7
     def forward(self, x):
         x = np.swapaxes(x, 1, 3)
         x = torch.flatten(x, end_dim = 2)
-        x_times_w = torch.ones((self.h_in * self.w_in, self.size_channel))
-        for i in range(self.size_channel):    
-            x = torch.reshape(x[:, i], (7, 7))
-            weights = torch.reshape(self.weight[:, i], (7, 7))
-            w = torch.flatten(torch.mm(x, weights))
-            x_times_w[:, i] = torch.add(w, self.bias[:, i])
+        x_times_w = Variable(torch.ones((self.h_in * self.w_in, self.size_channel))).to(self.device)
+        for i in range(self.size_channel):   
+            new_x = x[:, i].view((7, 7))
+            new_weights = self.weight[:, i].view((7, 7))
+            x_times_w[:, i] = torch.add(torch.flatten(torch.mm(new_x, new_weights)), self.bias[:, i])
         return x_times_w

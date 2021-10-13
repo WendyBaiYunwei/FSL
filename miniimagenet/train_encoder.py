@@ -117,10 +117,12 @@ def main():
             sample_features = feature_encoder(Variable(inputs).to(device))
 
             baseline_features = vgg16(Variable(inputs).to(device)) # batch_size * 512 * 7 * 7
+
             baseline_features = np.swapaxes(baseline_features, 1, 3)
+            baseline_features = torch.flatten(baseline_features, end_dim=2)
 
             feature_encoder_optim.zero_grad()
-        
+
             loss = get_loss(sample_features, baseline_features)
             loss.backward(torch.ones_like(loss))
 
@@ -131,7 +133,7 @@ def main():
         print("loss:",curr_loss)
 
     feature_encoder.train()
-    EPISODE = 2
+
     for episode in range(EPISODE):
         train(episode)
 
@@ -143,5 +145,6 @@ def main():
 
     print('Done.')
 
+    # to-do: visualize feature vectors
 if __name__ == '__main__':
     main()
