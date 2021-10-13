@@ -11,6 +11,8 @@ import numpy as np
 import os
 import argparse
 import math
+from my_fc import MyLinearLayer
+from cifar_generator import CIFAR10 
 
 EPISODE = 50
 LEARNING_RATE = 0.1
@@ -19,36 +21,26 @@ class CNNEncoder(nn.Module):
     def __init__(self):
         super(CNNEncoder, self).__init__()
         self.layer1 = nn.Sequential(
-                        nn.Conv2d(3,64,kernel_size=3,padding=0),
-                        nn.BatchNorm2d(64, momentum=1, affine=True),
+                        nn.Conv2d(3,64,kernel_size=3,padding=1),
                         nn.ReLU(),
-                        nn.MaxPool2d(2))
+                        nn.MaxPool2d(2, 2))
         self.layer2 = nn.Sequential(
-                        nn.Conv2d(64,128,kernel_size=3,padding=0),
-                        nn.BatchNorm2d(128, momentum=1, affine=True),
+                        nn.Conv2d(64,128,kernel_size=3,padding=1),
                         nn.ReLU(),
-                        nn.MaxPool2d(2))
+                        nn.MaxPool2d(2, 2))
         self.layer3 = nn.Sequential(
                         nn.Conv2d(128,256,kernel_size=3,padding=1),
-                        nn.BatchNorm2d(256, momentum=1, affine=True),
                         nn.ReLU(),
-                        nn.MaxPool2d(2))
+                        nn.MaxPool2d(2, 2))
         self.layer4 = nn.Sequential(
                         nn.Conv2d(256,512,kernel_size=3,padding=1),
-                        nn.BatchNorm2d(512, momentum=1, affine=True),
                         nn.ReLU(),
-                        nn.MaxPool2d(2))
+                        nn.MaxPool2d(2, 2))
         self.layer5 = nn.Sequential(
                         nn.Conv2d(512,512,kernel_size=3,padding=1),
-                        nn.BatchNorm2d(512, momentum=1, affine=True),
                         nn.ReLU(),
-                        nn.MaxPool2d(2))
-        self.layer6 = nn.Sequential(
-                        nn.Conv2d(512,512,kernel_size=3,padding=1),
-                        nn.BatchNorm2d(512, momentum=1, affine=True),
-                        nn.ReLU(),
-                        nn.MaxPool2d(2))
-        self.layer7 = nn.Linear(7*7, 7*7)
+                        nn.MaxPool2d(2, 2))
+        self.layer6 = MyLinearLayer(7, 7, 512)
     
     def forward(self,x):
         out = self.layer1(x)
@@ -57,7 +49,6 @@ class CNNEncoder(nn.Module):
         out = self.layer4(out)
         out = self.layer5(out)
         out = self.layer6(out)
-        out = self.layer7(out)
         return out
 
 def weights_init(m):
@@ -76,19 +67,23 @@ def weights_init(m):
         m.bias.data = torch.ones(m.bias.data.size())
 
 def get_loss(out, target):
-    loss = torch.sum(torch.sum(torch.abs(out - target), 4), 3)
+    # 7 * 7, 512 -> v * 512
+    loss = torch.sum(torch.abs(out - target), 1)
     return torch.squeeze(loss)
 
 def main():
     device = torch.device("cuda")
-
-    vgg16 = models.vgg16(pretrained=True).features
     
     feature_encoder = CNNEncoder()
-    if os.path.isdir('checkpoint'):
-        print('==> Resuming from checkpoint..')
-        checkpoint = torch.load('./checkpoint/ckpt.pth')
-        feature_encoder.load_state_dict(checkpoint['feature_encoder'])
+    if os.path.exists('./checkpoint/vgg16.pth'):
+        model = models.vgg16(pretrained=False)
+        model.load_state_dict(torch.load('./checkpoint/vgg16.pth'))
+        vgg16 = model.features
+    else:
+        vgg16 = models.vgg16(pretrained=True).features
+
+    if os.path.exists('./checkpoint/feature_encoder.pth'):
+        feature_encoder.load_state_dict(torch.load('./checkpoint/feature_encoder.pth'))
     else:
         feature_encoder.apply(weights_init)
 
@@ -108,19 +103,21 @@ def main():
                     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
                 ])
 
-    trainset = torchvision.datasets.CIFAR10(root='./cifar-data', train=True,
+    trainset = CIFAR10(root='../datas/cifar-10-python', train=True,
                                     download=False, transform=transform)
     trainloader = torch.utils.data.DataLoader(
-        trainset, batch_size=32, shuffle=True, num_workers=2)
+        trainset, batch_size=1, shuffle=True, num_workers=2)
 
     print("Training...")
 
     def train(episode):
         feature_encoder_scheduler.step(episode)
         for inputs, _ in trainloader:
+
             sample_features = feature_encoder(Variable(inputs).to(device))
 
             baseline_features = vgg16(Variable(inputs).to(device)) # batch_size * 512 * 7 * 7
+            baseline_features = np.swapaxes(baseline_features, 1, 3)
 
             feature_encoder_optim.zero_grad()
         
@@ -140,12 +137,9 @@ def main():
 
     print("Done training, start saving")
 
-    state = {
-        'feature_encoder': feature_encoder.state_dict()
-    }
     if not os.path.isdir('checkpoint'):
         os.mkdir('checkpoint')
-    torch.save(state, './checkpoint/ckpt.pth')
+    torch.save(feature_encoder.state_dict(), './checkpoint/feature_encoder.pth')
 
     print('Done.')
 

@@ -102,3 +102,5 @@ ENV/
 .DS_Store
 
 datas/*
+miniimagenet/checkpoint/vgg16.pth
+vgg16-pretrained/hub/checkpoints/vgg16.pth
