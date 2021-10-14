@@ -14,7 +14,7 @@ import math
 from my_fc import MyLinearLayer
 from cifar_generator import CIFAR10 
 
-EPISODE = 1
+EPISODE = 0
 LEARNING_RATE = 0.1
 
 class CNNEncoder(nn.Module):
@@ -103,7 +103,7 @@ def main():
                     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
                 ])
 
-    trainset = CIFAR10(root='./datas/cifar-10-python', train=True,
+    trainset = CIFAR10(root='../datas/cifar-10-python', train=True,
                                     download=False, transform=transform)
     trainloader = torch.utils.data.DataLoader(
         trainset, batch_size=1, shuffle=True, num_workers=2)
