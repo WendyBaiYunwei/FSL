@@ -14,7 +14,7 @@ import math
 from my_fc import MyLinearLayer
 from cifar_generator import CIFAR10 
 
-EPISODE = 50
+EPISODE = 1
 LEARNING_RATE = 0.1
 
 class CNNEncoder(nn.Module):
@@ -103,7 +103,7 @@ def main():
                     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
                 ])
 
-    trainset = CIFAR10(root='../datas/cifar-10-python', train=True,
+    trainset = CIFAR10(root='./datas/cifar-10-python', train=True,
                                     download=False, transform=transform)
     trainloader = torch.utils.data.DataLoader(
         trainset, batch_size=1, shuffle=True, num_workers=2)
@@ -111,14 +111,14 @@ def main():
     print("Training...")
 
     def train(episode):
-        feature_encoder_scheduler.step(episode)
+        count = 0
         for inputs, _ in trainloader:
 
             sample_features = feature_encoder(Variable(inputs).to(device))
 
             baseline_features = vgg16(Variable(inputs).to(device)) # batch_size * 512 * 7 * 7
 
-            baseline_features = np.swapaxes(baseline_features, 1, 3)
+            baseline_features = torch.transpose(baseline_features, 1, 3)
             baseline_features = torch.flatten(baseline_features, end_dim=2)
 
             feature_encoder_optim.zero_grad()
@@ -127,7 +127,11 @@ def main():
             loss.backward(torch.ones_like(loss))
 
             feature_encoder_optim.step()
+            count += 1
+            if count % 1000 == 0:
+                print(count)
 
+        feature_encoder_scheduler.step(episode)
         curr_loss = torch.sum(loss).item()
         print("episode:",episode+1)
         print("loss:",curr_loss)

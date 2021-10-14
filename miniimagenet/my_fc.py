@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import numpy as np
 from torch.autograd import Variable
 
 class MyLinearLayer(nn.Module):
@@ -15,7 +14,7 @@ class MyLinearLayer(nn.Module):
 
     #N * 512 * 7 * 7
     def forward(self, x):
-        x = np.swapaxes(x, 1, 3)
+        x = torch.transpose(x, 1, 3)
         x = torch.flatten(x, end_dim = 2)
         x_times_w = Variable(torch.ones((self.h_in * self.w_in, self.size_channel))).to(self.device)
         for i in range(self.size_channel):   

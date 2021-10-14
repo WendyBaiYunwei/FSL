@@ -105,3 +105,5 @@ datas/*
 miniimagenet/checkpoint/vgg16.pth
 vgg16-pretrained/hub/checkpoints/vgg16.pth
 miniimagenet/checkpoint/feature_encoder.pth
+datas.zip
+miniimagenet/checkpoint/vgg16.zip
