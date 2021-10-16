@@ -10,7 +10,7 @@ class MyLinearLayer(nn.Module):
         self.weight = nn.Parameter(weight)
         bias = torch.Tensor(h_in * w_in, size_channel)
         self.bias = nn.Parameter(bias)
-        self.device = torch.device("cpu")
+        self.device = torch.device("cuda")
 
     #N * 512 * 7 * 7
     def forward(self, x):

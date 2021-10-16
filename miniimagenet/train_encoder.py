@@ -136,7 +136,8 @@ def main():
             feature_encoder_optim.step()
             count += 1
             if count % 100 == 0:
-                logging.info(str(episode) + ' ' + str(count) + '\n')
+                print(episode, count, loss)
+                logging.info(str(episode) + ' ' + str(count) + str(loss) + '\n')
             # if count % 10000 == 0:
             #     break
             #     print(count)
