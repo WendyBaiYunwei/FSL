@@ -14,7 +14,7 @@ import math
 from my_fc import MyLinearLayer
 import logging
 
-EPISODE = 1
+EPISODE = 200
 LEARNING_RATE = 0.1
 
 class CNNEncoder(nn.Module):
@@ -68,7 +68,7 @@ def weights_init(m):
 
 def get_loss(out, target):
     # 7 * 7, 512 -> v * 512
-    loss = torch.sum(torch.abs(out - target), 1) / 1000
+    loss = torch.sum(torch.abs(out - target), 1)
     return torch.squeeze(loss)
 
 def main():
@@ -104,7 +104,7 @@ def main():
                     transforms.ToTensor(),
                 ])
 
-    trainset = datasets.MNIST(root='./datas/mnist', download=True, transform=transform)
+    trainset = datasets.MNIST(root='./datas/mnist', download=False, transform=transform)
                                     
     # imagenet_data = torchvision.datasets.ImageNet('./06.ImageNet_2012')
     # trainloader = torch.utils.data.DataLoader(imagenet_data, train=False,
@@ -118,7 +118,7 @@ def main():
         count = 0
         epoch_loss = 0
         for inputs, _ in trainloader:
-
+            inputs = inputs.repeat(1, 3, 1, 1)
             sample_features = feature_encoder(Variable(inputs).to(device))
 
             baseline_features = vgg16(Variable(inputs).to(device)) # batch_size * 512 * 7 * 7
@@ -137,7 +137,6 @@ def main():
             count += 1
             if count % 100 == 0:
                 logging.info(str(episode) + ' ' + str(count) + ' ' + str(epoch_loss) + '\n')
-            break
 
         feature_encoder_scheduler.step(episode)
         logging.info("episode:" + str(episode+1) + "loss:" + str(epoch_loss / len(trainloader)))
