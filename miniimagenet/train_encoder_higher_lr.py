@@ -73,7 +73,7 @@ def get_loss(out, target):
     return torch.squeeze(loss)
 
 def main():
-    logging.basicConfig(filename='record.log', level=logging.INFO)
+    logging.basicConfig(filename='record_higher_lr.log', level=logging.INFO)
 
     device = torch.device("cuda")
     
@@ -113,7 +113,7 @@ def main():
     # trainloader = torch.utils.data.DataLoader(imagenet_data, train=False,
     #                                       shuffle=False)
     trainloader = torch.utils.data.DataLoader(
-        trainset, batch_size=1, shuffle=False, num_workers=2)
+        trainset, batch_size=1, shuffle=True, num_workers=2)
 
     print("Training...")
 
