@@ -13,8 +13,9 @@ import argparse
 import math
 from my_fc import MyLinearLayer
 from cifar_generator import CIFAR10 
+import logging
 
-EPISODE = 0
+EPISODE = 2
 LEARNING_RATE = 0.1
 
 class CNNEncoder(nn.Module):
@@ -68,10 +69,12 @@ def weights_init(m):
 
 def get_loss(out, target):
     # 7 * 7, 512 -> v * 512
-    loss = torch.sum(torch.abs(out - target), 1)
+    loss = torch.sum(torch.abs(out - target), 1) / 1000
     return torch.squeeze(loss)
 
 def main():
+    logging.basicConfig(filename='record.log')
+
     device = torch.device("cuda")
     
     feature_encoder = CNNEncoder()
@@ -103,8 +106,12 @@ def main():
                     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
                 ])
 
-    trainset = CIFAR10(root='../datas/cifar-10-python', train=True,
+    trainset = CIFAR10(root='./datas/cifar-10-python', train=True,
                                     download=False, transform=transform)
+                                    
+    # imagenet_data = torchvision.datasets.ImageNet('./06.ImageNet_2012')
+    # trainloader = torch.utils.data.DataLoader(imagenet_data, train=False,
+    #                                       shuffle=False)
     trainloader = torch.utils.data.DataLoader(
         trainset, batch_size=1, shuffle=True, num_workers=2)
 
@@ -128,13 +135,16 @@ def main():
 
             feature_encoder_optim.step()
             count += 1
-            if count % 1000 == 0:
-                print(count)
+            if count % 100 == 0:
+                logging.info(str(episode) + ' ' + str(count) + '\n')
+            # if count % 10000 == 0:
+            #     break
+            #     print(count)
 
         feature_encoder_scheduler.step(episode)
         curr_loss = torch.sum(loss).item()
-        print("episode:",episode+1)
-        print("loss:",curr_loss)
+        logging.info("episode:",episode+1)
+        logging.info("loss:",curr_loss)
 
     feature_encoder.train()
 

@@ -108,3 +108,7 @@ miniimagenet/checkpoint/feature_encoder.pth
 datas.zip
 miniimagenet/checkpoint/vgg16.zip
 miniimagenet/img.png
+miniimagenet/checkpoint.zip
+miniimagenet/checkpoint/checkpoint.zip
+miniimagenet/checkpoint/checkpoint/feature_encoder.pth
+miniimagenet/checkpoint/checkpoint/vgg16.pth
