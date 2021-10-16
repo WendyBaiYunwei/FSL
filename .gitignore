@@ -112,3 +112,14 @@ miniimagenet/checkpoint.zip
 miniimagenet/checkpoint/checkpoint.zip
 miniimagenet/checkpoint/checkpoint/feature_encoder.pth
 miniimagenet/checkpoint/checkpoint/vgg16.pth
+cifar/checkpoint.zip
+cifar/checkpoint/checkpoint.zip
+cifar/checkpoint/feature_encoder.pth
+cifar/checkpoint/vgg16.zip
+cifar/checkpoint/checkpoint/feature_encoder.pth
+cifar/checkpoint/checkpoint/vgg16.pth
+cifar/models/miniimagenet_feature_encoder_5way_1shot.pkl
+cifar/models/miniimagenet_feature_encoder_5way_5shot.pkl
+cifar/models/miniimagenet_relation_network_5way_1shot.pkl
+cifar/models/miniimagenet_relation_network_5way_5shot.pkl
+cifar/checkpoint/vgg16.pth
