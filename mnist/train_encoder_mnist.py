@@ -13,6 +13,7 @@ import argparse
 import math
 from my_fc import MyLinearLayer
 import logging
+import datetime
 
 EPISODE = 1000
 LEARNING_RATE = 0.1
@@ -72,7 +73,12 @@ def get_loss(out, target):
     return torch.squeeze(loss)
 
 def main():
-    logging.basicConfig(filename='record_mnist.log', level=logging.INFO)
+    logging.basicConfig(filename='record_mnist2.log', level=logging.INFO)
+
+    now = datetime.now()
+
+    current_time = now.strftime("%H:%M:%S")
+    logging.info("Current Time =", current_time)
 
     device = torch.device("cuda")
     
@@ -84,8 +90,8 @@ def main():
     else:
         vgg16 = models.vgg16(pretrained=True).features
 
-    if os.path.exists('./checkpoint/feature_encoder_mnist2.pth'):
-        feature_encoder.load_state_dict(torch.load('./checkpoint/feature_encoder_mnist2.pth'))
+    if os.path.exists('./checkpoint/feature_encoder_mnist_new.pth'):
+        feature_encoder.load_state_dict(torch.load('./checkpoint/feature_encoder_mnist_new.pth'))
     else:
         feature_encoder.apply(weights_init)
 
@@ -116,6 +122,7 @@ def main():
 
     def train(episode):
         epoch_loss = 0
+        count = 0
         for inputs, _ in trainloader:
             inputs = inputs.repeat(1, 3, 1, 1)
             sample_features = feature_encoder(Variable(inputs).to(device))
@@ -133,6 +140,9 @@ def main():
             feature_encoder_optim.step()
 
             epoch_loss += torch.sum(torch.sum(loss)).item()
+            if count % 100 == 0:
+                print(count, epoch_loss / count)
+            count += 1
 
         feature_encoder_scheduler.step(episode)
         logging.info("episode:" + str(episode+1) + "loss:" + str(epoch_loss / len(trainloader)))
@@ -141,15 +151,14 @@ def main():
     feature_encoder.train()
 
     for episode in range(EPISODE):
+        torch.save(feature_encoder.state_dict(), './checkpoint/feature_encoder_mnist_new.pth')
         train(episode)
-        if episode % 100 == 0:
-            torch.save(feature_encoder.state_dict(), './checkpoint/feature_encoder_mnist2.pth')
+        
+    # print("Done training, start saving")
 
-    print("Done training, start saving")
-
-    if not os.path.isdir('checkpoint'):
-        os.mkdir('checkpoint')
-    torch.save(feature_encoder.state_dict(), './checkpoint/feature_encoder_mnist2.pth')
+    # if not os.path.isdir('checkpoint'):
+    #     os.mkdir('checkpoint')
+    # torch.save(feature_encoder.state_dict(), './checkpoint/feature_encoder_mnist_new.pth')
 
     print('Done.')
 
