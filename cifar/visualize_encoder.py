@@ -59,8 +59,8 @@ def main():
     model.load_state_dict(torch.load('./checkpoint/vgg16.pth'))
     vgg16 = model.features
 
-    assert os.path.exists('./checkpoint/feature_encoder.pth')
-    feature_encoder.load_state_dict(torch.load('./checkpoint/feature_encoder.pth'))
+    assert os.path.exists('./feature_encoder.pth')
+    feature_encoder.load_state_dict(torch.load('./feature_encoder.pth'))
 
     # Freeze model parameters
     for param in vgg16.parameters():

@@ -16,7 +16,8 @@ class MyLinearLayer(nn.Module):
     def forward(self, x):
         x = torch.transpose(x, 1, 3)
         x = torch.flatten(x, end_dim = 2)
-        x_times_w = Variable(torch.ones((self.h_in * self.w_in, self.size_channel))).to(self.device)
+        #x_times_w = Variable(torch.ones((self.h_in * self.w_in, self.size_channel))).to(self.device)
+        x_times_w = torch.ones((self.h_in * self.w_in, self.size_channel))
         for i in range(self.size_channel):   
             new_x = x[:, i].view((7, 7))
             new_weights = self.weight[:, i].view((7, 7))
