@@ -12,7 +12,7 @@ class MyLinearLayer(nn.Module):
         self.bias = nn.Parameter(bias)
         self.device = torch.device("cuda")
 
-    #N * 512 * 7 * 7
+    #N * 512 * 7 * 7 -> 49, 512
     def forward(self, x):
         x = torch.transpose(x, 1, 3)
         x = torch.flatten(x, end_dim = 2)

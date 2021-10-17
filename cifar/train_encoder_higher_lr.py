@@ -16,7 +16,7 @@ from cifar_generator import CIFAR10
 import logging
 
 EPISODE = 200
-LEARNING_RATE = 0.1
+LEARNING_RATE = 0.01
 
 class CNNEncoder(nn.Module):
     def __init__(self):
@@ -150,13 +150,13 @@ def main():
     for episode in range(EPISODE):
         train(episode)
         if episode % 2 == 0:
-            torch.save(feature_encoder.state_dict(), './checkpoint/feature_encoder.pth')
+            torch.save(feature_encoder.state_dict(), './checkpoint/feature_encoder2.pth')
 
     print("Done training, start saving")
 
     if not os.path.isdir('checkpoint'):
         os.mkdir('checkpoint')
-    torch.save(feature_encoder.state_dict(), './checkpoint/feature_encoder.pth')
+    torch.save(feature_encoder.state_dict(), './checkpoint/feature_encoder2.pth')
 
     print('Done.')
 

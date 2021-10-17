@@ -15,7 +15,7 @@ from my_fc import MyLinearLayer
 import logging
 
 EPISODE = 1000
-LEARNING_RATE = 0.1
+LEARNING_RATE = 0.01
 
 class CNNEncoder(nn.Module):
     def __init__(self):

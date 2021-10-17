@@ -69,8 +69,8 @@ def weights_init(m):
 
 def get_loss(out, target):
     # 7 * 7, 512 -> v * 512
-    loss = torch.sum(torch.abs(out - target), 1) / 1000
-    return torch.squeeze(loss)
+    loss = torch.abs(out - target)
+    return loss
 
 def main():
     logging.basicConfig(filename='record.log', level=logging.INFO)
@@ -136,10 +136,7 @@ def main():
 
             feature_encoder_optim.step()
 
-            epoch_loss += torch.sum(loss).item()
-            count += 1
-            if count % 100 == 0:
-                logging.info(str(episode) + ' ' + str(count) + ' ' + str(epoch_loss) + '\n')
+            epoch_loss += torch.sum(torch.sum(loss)).item()
 
         feature_encoder_scheduler.step(episode)
         logging.info("episode:" + str(episode+1) + "loss:" + str(epoch_loss / len(trainloader)))
