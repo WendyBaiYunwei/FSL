@@ -124,3 +124,5 @@ cifar/models/miniimagenet_relation_network_5way_1shot.pkl
 cifar/models/miniimagenet_relation_network_5way_5shot.pkl
 cifar/checkpoint/vgg16.pth
 cifar/feature_encoder.pth
+mnist/datas/
+mnist/feature_encoder_mnist1.pth

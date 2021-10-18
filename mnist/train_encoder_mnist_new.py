@@ -17,13 +17,15 @@ from datetime import datetime
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-l","--learning_rate",type = float, required=True)
-parser.add_argument("-s","--step_size",type = int, default = 200)
+parser.add_argument("-l1","--learning_rate",type = float, required=True) # estimate: 0.3
+parser.add_argument("-l2","--learning_rate_fc",type = float, required=True) # estimate: 0.0001
+parser.add_argument("-s","--step_size",type = int, default = 1000000)
 parser.add_argument("-v","--version_number",type = str, required=True)
 args = parser.parse_args()
 
 EPISODE = 1000
 LEARNING_RATE = args.learning_rate
+LEARNING_RATE_FC = args.learning_rate_fc
 VERSION = args.version_number
 STEP_SIZE = args.step_size
 
@@ -88,7 +90,7 @@ def main():
 
     current_time = now.strftime("%m/%d-%H:%M:%S")
     logging.info(" Current Time = " + current_time)
-    logging.info(VERSION + '-' + str(LEARNING_RATE) + '-' + str(STEP_SIZE))
+    logging.info(VERSION + '-' + str(LEARNING_RATE) + '-' + str(LEARNING_RATE_FC) + '-' + str(STEP_SIZE))
 
     device = torch.device("cuda")
     
@@ -109,7 +111,9 @@ def main():
     for param in vgg16.parameters():
         param.requires_grad = False
 
-    feature_encoder_optim = torch.optim.Adam(feature_encoder.parameters(),lr=LEARNING_RATE)
+    feature_encoder_optim = torch.optim.Adam([
+        {"params": feature_encoder.layer6.parameters(), "lr": LEARNING_RATE_FC},
+        ], lr=LEARNING_RATE)
     feature_encoder_scheduler = StepLR(feature_encoder_optim,step_size=STEP_SIZE,gamma=0.7)
     
     transform = transforms.Compose(
@@ -149,8 +153,10 @@ def main():
                 feature_encoder_scheduler.step()
             count += 1
 
-        logging.info("episode:" + str(episode+1) + "loss:" + str(epoch_loss / len(trainloader)) +\
-            "learning_rate:" + str(feature_encoder_scheduler.get_lr()))
+        now = datetime.now()
+        current_time = now.strftime("%m/%d-%H:%M:%S")
+        logging.info("episode:" + str(episode+1) + "  loss:" + str(epoch_loss / len(trainloader)) +\
+            "  learning_rate:" + str(feature_encoder_scheduler.get_last_lr() + " time:" + current_time))
         
 
     feature_encoder.train()
