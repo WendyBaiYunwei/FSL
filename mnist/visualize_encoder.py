@@ -76,23 +76,23 @@ def main():
     trainset = datasets.MNIST(root='./datas/mnist', download=True, transform=transform)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=1, shuffle=True)
 
-    i = 0
     for inputs, _ in trainloader:
         inputs = inputs.repeat(1, 3, 1, 1)
-        sample_features = feature_encoder(Variable(inputs)).view((7, 7, 512)).detach()[:, :, 0]
-        baseline_features = vgg16(Variable(inputs)).detach()[0, 0, :, :]
-        img = inputs[0].view(224, 224, 3).detach()
-        arr = [sample_features, img, baseline_features]
-        ix = 1
-        for j in range(3):
-            # specify subplot and turn of axis
-            ax = plt.subplot(1, 3, ix)
-            ax.set_xticks([])
-            ax.set_yticks([])
-            # plot filter channel in grayscale
-            plt.imshow(arr[j], cmap='gray')
-            ix += 1
-        plt.show()
+        for channel_i in range(1, 4):
+            sample_features = feature_encoder(Variable(inputs)).view((7, 7, 512)).detach()[:, :, channel_i]
+            baseline_features = vgg16(Variable(inputs)).detach()[0, channel_i, :, :]
+            img = inputs[0].view(224, 224, 3).detach()
+            arr = [sample_features, img, baseline_features]
+            ix = 1
+            for j in range(3):
+                # specify subplot and turn of axis
+                ax = plt.subplot(1, 3, ix)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                # plot filter channel in grayscale
+                plt.imshow(arr[j], cmap='gray')
+                ix += 1
+            plt.show()
         break
 
     # to-do: visualize feature vectors

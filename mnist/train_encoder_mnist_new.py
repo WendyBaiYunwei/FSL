@@ -16,17 +16,21 @@ import logging
 from datetime import datetime
 import argparse
 
+# resume encoder from, change vgg16 dir
+
 parser = argparse.ArgumentParser()
 parser.add_argument("-l1","--learning_rate",type = float, required=True) # estimate: 0.3
 parser.add_argument("-l2","--learning_rate_fc",type = float, required=True) # estimate: 0.0001
 parser.add_argument("-s","--step_size",type = int, default = 1000000)
 parser.add_argument("-v","--version_number",type = str, required=True)
+parser.add_argument("-from_v","--resumed_v",type = str, required=True)
 args = parser.parse_args()
 
 EPISODE = 1000
 LEARNING_RATE = args.learning_rate
 LEARNING_RATE_FC = args.learning_rate_fc
 VERSION = args.version_number
+VERSION2 = args.resumed_v
 STEP_SIZE = args.step_size
 
 class CNNEncoder(nn.Module):
@@ -94,15 +98,16 @@ def main():
 
     device = torch.device("cuda")
     
-    feature_encoder = CNNEncoder()
-    if os.path.exists('./checkpoint/vgg16.pth'):
+    
+    if os.path.exists('./vgg16.pth'):
         model = models.vgg16(pretrained=False)
-        model.load_state_dict(torch.load('./checkpoint/vgg16.pth'))
+        model.load_state_dict(torch.load('./vgg16.pth'))
         vgg16 = model.features
     else:
         vgg16 = models.vgg16(pretrained=True).features
 
-    feature_encoder.apply(weights_init)
+    feature_encoder = CNNEncoder()
+    feature_encoder.load_state_dict(torch.load('./feature_encoder_mnist' + VERSION2 + '.pth'))
 
     vgg16.to(device)
     feature_encoder.to(device)
@@ -121,7 +126,7 @@ def main():
                     transforms.ToTensor(),
                 ])
 
-    trainset = datasets.MNIST(root='./datas/mnist', download=False, transform=transform)
+    trainset = datasets.MNIST(root='./datas/mnist', download=True, transform=transform)
 
     trainloader = torch.utils.data.DataLoader(
         trainset, batch_size=1, shuffle=True, num_workers=2)
@@ -163,7 +168,7 @@ def main():
 
     for episode in range(EPISODE):
         train(episode)
-        torch.save(feature_encoder.state_dict(), './checkpoint/feature_encoder_mnist' + VERSION +'.pth')
+        torch.save(feature_encoder.state_dict(), './feature_encoder_mnist' + VERSION +'.pth')
 
     # print("Done training, start saving")
 
