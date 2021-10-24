@@ -17,6 +17,8 @@ import os
 import math
 import argparse
 import random
+import logging
+from datetime import datetime
 
 parser = argparse.ArgumentParser(description="One Shot Visual Recognition")
 parser.add_argument("-f","--feature_dim",type = int, default = 64)
@@ -36,10 +38,10 @@ args = parser.parse_args()
 FEATURE_DIM = args.feature_dim
 RELATION_DIM = args.relation_dim
 CLASS_NUM = args.class_num
-SAMPLE_NUM_PER_CLASS = args.sample_num_per_class
-BATCH_NUM_PER_CLASS = args.batch_num_per_class
-EPISODE = args.episode
-TEST_EPISODE = args.test_episode
+SAMPLE_NUM_PER_CLASS = 1##args.sample_num_per_class
+BATCH_NUM_PER_CLASS = 1##args.batch_num_per_class
+EPISODE = 1##args.episode
+TEST_EPISODE = 1##args.test_episode
 LEARNING_RATE = args.learning_rate
 GPU = args.gpu
 HIDDEN_UNIT = args.hidden_unit
@@ -116,6 +118,13 @@ def weights_init(m):
         m.bias.data = torch.ones(m.bias.data.size())
 
 def main():
+    logging.basicConfig(filename='relation_net_orgin.log', level=logging.INFO)
+
+    now = datetime.now()
+
+    current_time = now.strftime("%m/%d-%H:%M:%S")
+    logging.info(" Current Time = " + str(current_time))
+
     # Step 1: init data folders
     print("init data folders")
     # init character folders for dataset construction
@@ -144,6 +153,13 @@ def main():
     if os.path.exists(str("./models/omniglot_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
         relation_network.load_state_dict(torch.load(str("./models/omniglot_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
         print("load relation network success")
+    ## load scheduler
+    if os.path.exists('./models/encoder_scheduler.pkl'):
+        feature_encoder.load_state_dict(torch.load('./models/encoder_scheduler.pkl'))
+        print("load feature encoder scheduler success")
+    if os.path.exists("./models/relation_scheduler.pkl"):
+        relation_network.load_state_dict(torch.load("./models/relation_scheduler.pkl"))
+        print("load relation network scheduler success")
 
     # Step 3: build graph
     print("Training...")
@@ -151,7 +167,6 @@ def main():
     last_accuracy = 0.0
 
     for episode in range(EPISODE):
-
         feature_encoder_scheduler.step(episode)
         relation_network_scheduler.step(episode)
 
@@ -202,10 +217,19 @@ def main():
         feature_encoder_optim.step()
         relation_network_optim.step()
 
-        if (episode+1)%100 == 0:
+        if episode > -1:##(episode+1)%10 == 0:
                 print("episode:",episode+1,"loss",loss.data)
+                now = datetime.now()
+                current_time = now.strftime("%m/%d-%H:%M:%S")
+                logging.info("episode:" + str(episode+1) + "  loss:" + str(loss.data) + \
+                    " learning_rate:" + str(relation_network_scheduler.get_last_lr()) + " time:" + str(current_time))
+                torch.save(feature_encoder.state_dict(),str("./models/omniglot_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot_e_" + str(EPISODE) +".pkl"))
+                torch.save(relation_network.state_dict(),str("./models/omniglot_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot_e_" + str(EPISODE) +".pkl"))
+                ## save scheduler
+                torch.save(feature_encoder_scheduler.state_dict(),'./models/encoder_scheduler.pkl')
+                torch.save(relation_network.state_dict(),'./models/relation_scheduler.pkl')
 
-        if (episode+1)%5000 == 0:
+        if episode > -1: ##(episode+1)%5000 == 0:
 
             # test
             print("Testing...")
@@ -244,21 +268,12 @@ def main():
 
             test_accuracy = total_rewards/1.0/CLASS_NUM/SAMPLE_NUM_PER_CLASS/TEST_EPISODE
 
-            print("test accuracy:",test_accuracy)
+            logging.info("test accuracy:" + str(test_accuracy))
 
             if test_accuracy > last_accuracy:
-
                 # save networks
-                torch.save(feature_encoder.state_dict(),str("./models/omniglot_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
-                torch.save(relation_network.state_dict(),str("./models/omniglot_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
-
-                print("save networks for episode:",episode)
-
+                logging.info("save networks for episode:" + str(episode))
                 last_accuracy = test_accuracy
-
-
-
-
 
 if __name__ == '__main__':
     main()
