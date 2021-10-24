@@ -30,7 +30,7 @@ parser.add_argument("-t","--test_episode", type = int, default = 1000)
 parser.add_argument("-l","--learning_rate", type = float, default = 0.001)
 parser.add_argument("-g","--gpu",type=int, default=0)
 parser.add_argument("-u","--hidden_unit",type=int,default=10)
-parser.add_argument("-v","--version_number",type = str, required=True)
+parser.add_argument("-v","--version_number",type = str, default='default_batch_size')
 args = parser.parse_args()
 
 
@@ -139,7 +139,6 @@ def main():
     feature_encoder = CNNEncoder()
     relation_network = RelationNetwork(FEATURE_DIM,RELATION_DIM)
 
-    feature_encoder.apply(weights_init)
     relation_network.apply(weights_init)
 
     feature_encoder.cuda(GPU)
@@ -153,7 +152,7 @@ def main():
     assert os.path.exists('./feature_encoder_mnist' + VERSION + '.pth')
     feature_encoder.load_state_dict(torch.load('./feature_encoder_mnist' + VERSION + '.pth'))
     if os.path.exists('./relation_net_omni_few.pth'):
-        relation_network.load_state_dict(torch.load('./relation_net_omni.pth'))
+        relation_network.load_state_dict(torch.load('./relation_net_omni_few.pth'))
 
     # Step 3: build graph
     print("Training...")
@@ -201,7 +200,6 @@ def main():
 
 
         # training
-
         feature_encoder.zero_grad()
         relation_network.zero_grad()
 
@@ -263,7 +261,7 @@ def main():
 
                 # save networks
                 torch.save(feature_encoder.state_dict(),str('./feature_encoder_mnist' + VERSION + '.pth'))
-                torch.save(relation_network.state_dict(),str('./relation_net_omni.pth'))
+                torch.save(relation_network.state_dict(),str('./relation_net_omni_few.pth'))
 
                 print("save networks for episode:",episode)
 

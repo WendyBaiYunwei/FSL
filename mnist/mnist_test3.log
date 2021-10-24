@@ -1,0 +1,48 @@
+INFO:root: Current Time = 10/23-11:03:56
+INFO:root:3-
+INFO:root:train episode:1 training loss:0.000208157904942830410/23-11:05:03
+INFO:root: Current Time = 10/23-11:06:14
+INFO:root:3-
+INFO:root: Current Time = 10/23-11:09:41
+INFO:root:3-
+INFO:root: Current Time = 10/23-11:12:19
+INFO:root:3-
+INFO:root: Current Time = 10/24-09:57:51
+INFO:root:3-
+INFO:root: Current Time = 10/24-10:23:28
+INFO:root:3-
+INFO:root: Current Time = 10/24-10:26:55
+INFO:root:3-
+INFO:root: Current Time = 10/24-10:30:07
+INFO:root:3-
+INFO:root: Current Time = 10/24-10:33:11
+INFO:root:3-
+INFO:root: Current Time = 10/24-10:48:27
+INFO:root:3-
+INFO:root: Current Time = 10/24-11:36:41
+INFO:root:3-
+INFO:root: Current Time = 10/24-11:40:29
+INFO:root:3-
+INFO:root: Current Time = 10/24-11:43:38
+INFO:root:3-
+INFO:root:train episode:1 training loss:0.000248016119003295910/24-11:44:56
+INFO:root: Current Time = 10/24-11:46:26
+INFO:root:3-
+INFO:root: Current Time = 10/24-11:48:18
+INFO:root:3-
+INFO:root:train episode:1 training loss:0.00014535787900288910/24-11:48:56
+INFO:root: Current Time = 10/24-11:49:54
+INFO:root:3-
+INFO:root:train episode:1 training loss:3.1179410219192505e-0510/24-11:50:58
+INFO:root: Current Time = 10/24-11:51:42
+INFO:root:3-
+INFO:root: Current Time = 10/24-11:53:20
+INFO:root:3-
+INFO:root: Current Time = 10/24-11:56:37
+INFO:root:3-
+INFO:root: Current Time = 10/24-11:58:54
+INFO:root:3-
+INFO:root:testing accuracy: 1.0 10/24-11:59:31
+INFO:root: Current Time = 10/24-12:00:28
+INFO:root:3-
+INFO:root:testing accuracy: 1.0 10/24-12:01:05
