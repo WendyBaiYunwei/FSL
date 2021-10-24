@@ -126,6 +126,7 @@ def main():
     transform = transforms.Compose(
                 [transforms.Resize((224, 224)),
                     transforms.ToTensor(),
+                    transforms.Normalize((0.1307,), (0.3081,))
                 ])
 
     trainset = datasets.MNIST(root='./datas/mnist', download=True, transform=transform)
@@ -163,7 +164,7 @@ def main():
         now = datetime.now()
         current_time = now.strftime("%m/%d-%H:%M:%S")
         logging.info("episode:" + str(episode+1) + "  loss:" + str(epoch_loss / len(trainloader)) +\
-            "  learning_rate:" + str(feature_encoder_scheduler.get_last_lr() + " time:" + current_time))
+            " learning_rate:" + str(feature_encoder_scheduler.get_last_lr()) + " time:" + str(current_time))
         
 
     feature_encoder.train()
