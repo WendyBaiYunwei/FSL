@@ -17,7 +17,6 @@ from datetime import datetime
 import argparse
 
 # resume encoder from, change vgg16 dir
-
 parser = argparse.ArgumentParser()
 parser.add_argument("-l1","--learning_rate",type = float, required=True) # estimate: 0.2
 parser.add_argument("-l2","--learning_rate_fc",type = float, required=True) # estimate: 0.0001
@@ -26,7 +25,7 @@ parser.add_argument("-v","--version_number",type = str, required=True)
 parser.add_argument("-v_from","--resumed_v",type = str, required=True)
 args = parser.parse_args()
 
-EPISODE = 1000
+EPISODE = 1
 LEARNING_RATE = args.learning_rate
 LEARNING_RATE_FC = args.learning_rate_fc
 VERSION = args.version_number
@@ -85,7 +84,8 @@ def weights_init(m):
 def get_loss(out, target):
     # 49, 512
     loss = torch.abs(out - target)
-    return torch.squeeze(loss)
+    loss = torch.squeeze(loss)
+    return loss
 
 def main():
     logging.basicConfig(filename='record_mnist' + VERSION +'.log', level=logging.INFO)
@@ -121,7 +121,6 @@ def main():
     feature_encoder_optim = torch.optim.Adam([
         {"params": feature_encoder.layer6.parameters(), "lr": LEARNING_RATE_FC},
         ], lr=LEARNING_RATE)
-    feature_encoder_scheduler = StepLR(feature_encoder_optim,step_size=STEP_SIZE,gamma=0.7)
     
     transform = transforms.Compose(
                 [transforms.Resize((224, 224)),
@@ -131,9 +130,7 @@ def main():
 
     trainset = datasets.MNIST(root='./datas/mnist', download=True, transform=transform)
 
-    trainloader = torch.utils.data.DataLoader(
-        trainset, shuffle=True, num_workers=2)
-
+    trainloader = torch.utils.data.DataLoader(trainset, shuffle=True, num_workers=2)
     print("Training...")
 
     def train(episode):
@@ -158,13 +155,12 @@ def main():
             epoch_loss += torch.sum(torch.sum(loss)).item()
             if count % 100 == 0:
                 print(count, epoch_loss / (count + 1))
-                feature_encoder_scheduler.step()
             count += 1
 
         now = datetime.now()
         current_time = now.strftime("%m/%d-%H:%M:%S")
         logging.info("episode:" + str(episode+1) + "  loss:" + str(epoch_loss / len(trainloader)) +\
-            " learning_rate:" + str(feature_encoder_scheduler.get_last_lr()) + " time:" + str(current_time))
+            " time:" + str(current_time))
         
 
     feature_encoder.train()
