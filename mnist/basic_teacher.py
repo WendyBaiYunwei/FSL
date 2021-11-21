@@ -53,8 +53,7 @@ optimizer = torch.optim.Adam(cnn.parameters(), lr=LEARNING_RATE)
 train_data = datasets.MNIST(
     root = 'data',
     train = True,                         
-    transform = ToTensor(),
-    download = True,            
+    transform = ToTensor()            
 )
 test_data = datasets.MNIST(
     root = 'data', 
@@ -107,12 +106,16 @@ def test():
         for images, labels in loaders['test']:
             test_output = cnn(Variable(images).to(device))
             pred_y = torch.max(test_output, 1)[1].data.squeeze()
+            labels = Variable(labels).to(device)
             accuracy = (pred_y == labels).sum().item() / float(labels.size(0))
     print('Test Accuracy of the model on the 10000 test images: %.2f' % accuracy)
 
 def main():
-    train(EPISODE, cnn, loaders)
-    torch.save(CNN.state_dict(), './base_teacher.pth')
+    # train(EPISODE, cnn, loaders)
+    # torch.save(cnn.state_dict(), './base_teacher.pth')
+    cnn.load_state_dict(torch.load('./base_teacher.pth'))
+    for param in cnn.parameters():
+        param.requires_grad = False
     test()
     print('Done.')
 

@@ -6,14 +6,23 @@ from torch import optim
 from torch.optim.lr_scheduler import StepLR
 from torchvision import datasets, models
 import torchvision
-import torchvision.transforms as transforms
+from torchvision.transforms import ToTensor
 import numpy as np
-import os
 import argparse
 import math
-from my_fc import MyLinearLayer
-import matplotlib.pyplot as plt
-from torchvision.transforms import ToTensor
+import logging
+from datetime import datetime
+import argparse
+from copy import deepcopy
+
+
+## train: two lenet, mnist, one pretrained, another randomly inited, compare loss
+parser = argparse.ArgumentParser()
+parser.add_argument("-l","--learning_rate",type = float, default=0.01) # estimate: 0.2
+args = parser.parse_args()
+
+EPISODE = 14
+LEARNING_RATE = args.learning_rate
 
 class CNN(nn.Module):
     def __init__(self):
@@ -35,54 +44,58 @@ class CNN(nn.Module):
             nn.MaxPool2d(2),                
         )
         self.out = nn.Linear(32 * 7 * 7, 10)
-    
+
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
-        print(x.shape)
-        # x = x.view(x.size(0), -1)
-        return x
+        x = x.view(x.size(0), -1)       
+        output = self.out(x)
+        return output, x
 
-def main():
+def weights_init(m):
+    classname = m.__class__.__name__
     teacher = CNN()
     teacher.load_state_dict(torch.load('./base_teacher.pth'))
     for param in teacher.parameters():
         param.requires_grad = False
+    if classname.find('Linear') != -1:
+        m.weight.data = deepcopy(teacher.out.weight.data)
+        m.bias.data = deepcopy(teacher.out.bias.data)
+
+
+def main():
+    device = torch.device("cuda")
+    
     student = CNN()
     student.load_state_dict(torch.load('./student.pth'))
     for param in student.parameters():
         param.requires_grad = False
+    student.apply(weights_init).to(device)
 
-    train_data = datasets.MNIST(
+    test_data = datasets.MNIST(
         root = 'data',
-        train = True,                         
+        train = False,                         
         transform = ToTensor(),
         download = False,            
     )
 
-    trainloader = torch.utils.data.DataLoader(train_data, 
+    testloader = torch.utils.data.DataLoader(test_data, 
                                         batch_size=1, 
                                         shuffle=True, 
                                         num_workers=1)
+    print("Testing...")
+    
+    student.eval()
+    
+    def test():
+        with torch.no_grad():
+            for images, labels in testloader:
+                test_output, _ = student(Variable(images).to(device))
+                pred_y = torch.max(test_output, 1)[1].data.squeeze()
+                labels = Variable(labels).to(device)
+                accuracy = (pred_y == labels).sum().item() / float(labels.size(0))
+        print('Test Accuracy of the model on the 10000 test images: %.5f' % accuracy)
+    test()
 
-    for inputs, _ in trainloader:
-        for channel_i in range(1, 4):
-            sample_features = student(Variable(inputs)).view((7, 7, 32)).detach()[:, :, channel_i].squeeze()
-            baseline_features = teacher(Variable(inputs)).view((7, 7, 32)).detach()[:, :, channel_i].squeeze()
-            img = inputs[0].detach()
-            arr = [sample_features, img.squeeze(), baseline_features]
-            ix = 1
-            for j in range(3):
-                # specify subplot and turn of axis
-                ax = plt.subplot(1, 3, ix)
-                ax.set_xticks([])
-                ax.set_yticks([])
-                # plot filter channel in grayscale
-                plt.imshow(arr[j], cmap='gray')
-                ix += 1
-            plt.show()
-        break
-
-    # to-do: visualize feature vectors
 if __name__ == '__main__':
     main()

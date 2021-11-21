@@ -24,7 +24,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-v", "--version_number", type = str, required=True)
 args = parser.parse_args()
 VERSION = args.version_number
-TEST_CLASSIFIER = True
+TEST_CLASSIFIER = False
 EPOCH = 30
 BATCH_SIZE = 128
 LEARNING_RATE = 0.0005
