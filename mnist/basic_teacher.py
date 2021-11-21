@@ -7,7 +7,7 @@ import torchvision
 from torchvision.transforms import ToTensor
 import numpy as np
 import argparse
-import argparse
+from copy import deepcopy
 
 
 ## train: two lenet, mnist, one pretrained, another randomly inited, compare loss
@@ -72,6 +72,12 @@ loaders = {
                                         num_workers=1),
 }
 
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Linear') != -1:
+        m.weight.data = deepcopy(cnn.out.weight.data)
+        m.bias.data = deepcopy(cnn.out.bias.data)
+
 def train(num_epochs, cnn, loaders):
         cnn.train()
             
@@ -99,12 +105,12 @@ def train(num_epochs, cnn, loaders):
                     print ('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}' 
                         .format(epoch + 1, num_epochs, i + 1, total_step, loss.item()))
 
-def test():
+def test(student):
     # Test the model
-    cnn.eval()
+    student.eval()
     with torch.no_grad():
         for images, labels in loaders['test']:
-            test_output = cnn(Variable(images).to(device))
+            test_output = student(Variable(images).to(device))
             pred_y = torch.max(test_output, 1)[1].data.squeeze()
             labels = Variable(labels).to(device)
             accuracy = (pred_y == labels).sum().item() / float(labels.size(0))
@@ -113,10 +119,22 @@ def test():
 def main():
     # train(EPISODE, cnn, loaders)
     # torch.save(cnn.state_dict(), './base_teacher.pth')
+    cnn = CNN()
     cnn.load_state_dict(torch.load('./base_teacher.pth'))
     for param in cnn.parameters():
         param.requires_grad = False
-    test()
+
+    student = CNN()
+    student.load_state_dict(torch.load('./student.pth'))
+    for param in student.parameters():
+        param.requires_grad = False
+    student.apply(weights_init)
+    student.to(device)
+    
+    # cnn.load_state_dict(torch.load('./base_teacher.pth'))
+    # for param in cnn.parameters():
+    #     param.requires_grad = False
+    test(student)
     print('Done.')
 
 if __name__ == '__main__':
