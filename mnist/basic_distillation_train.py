@@ -17,7 +17,7 @@ import argparse
 
 ## train: two lenet, mnist, one pretrained, another randomly inited, compare loss
 parser = argparse.ArgumentParser()
-parser.add_argument("-l","--learning_rate",type = float, default=0.01) # estimate: 0.2
+parser.add_argument("-l","--learning_rate",type = float, default=0.015) # estimate: 0.2
 args = parser.parse_args()
 
 EPISODE = 14
@@ -47,6 +47,19 @@ class CNN(nn.Module):
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
+        x = x.view(x.size(0), -1)       
+        output = self.out(x)
+        return output, x
+
+class Encoder(nn.Module):
+    def __init__(self):
+        super(Encoder, self).__init__()
+        self.linear1 = nn.Linear(28 * 28, 14)
+        self.linear2 = nn.Linear(14, 32 * 7 * 7)
+
+    def forward(self, x):
+        x = self.linear1(x)
+        x = self.linear2(x)
         x = x.view(x.size(0), -1)       
         output = self.out(x)
         return output, x
@@ -81,7 +94,8 @@ def main():
     student.apply(weights_init).to(device)
 
     optimizer = torch.optim.Adam(student.parameters(), lr=LEARNING_RATE)
-    
+    scheduler = StepLR(optimizer,step_size=1,gamma=0.9)
+
     train_data = datasets.MNIST(
         root = 'data',
         train = True,                         
@@ -90,8 +104,8 @@ def main():
     )
 
     trainloader = torch.utils.data.DataLoader(train_data, 
-                                        batch_size=1, 
-                                        shuffle=True, 
+                                        batch_size=16, 
+                                        shuffle=False, 
                                         num_workers=1)
     print("Training...")
     
@@ -120,6 +134,7 @@ def main():
 
     for episode in range(EPISODE):
         train(episode)
+        scheduler.step()
         if episode % 2 == 0:
             torch.save(student.state_dict(), './student.pth')
     print('Done.')
