@@ -1,9 +1,0 @@
-INFO:root: Current Time = 10/17-23:05:22
-INFO:root:3-0.3-200
-INFO:root:episode:1loss:361343554.85369545learning_rate:[0.07202999999999998]
-INFO:root:episode:2loss:1914.7979073079428learning_rate:[0.024706289999999992]
-INFO:root: Current Time = 10/18-10:02:45
-INFO:root:3-0.3-0.0001-1000000
-INFO:root: Current Time = 10/18-10:03:40
-INFO:root:3-0.3-0.0001-1000000
-INFO:root:episode:1loss:3472.7173209147136learning_rate:[0.0001]

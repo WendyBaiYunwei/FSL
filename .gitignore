@@ -127,3 +127,4 @@ mnist/datas/
 mnist/feature_encoder_mnist1.pth
 *.pth
 yw_cloud/
+mnist/data/
