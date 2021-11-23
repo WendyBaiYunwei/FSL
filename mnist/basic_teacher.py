@@ -6,17 +6,44 @@ from torchvision import datasets, models
 import torchvision
 from torchvision.transforms import ToTensor
 import numpy as np
+import math
 import argparse
 from copy import deepcopy
-
+import torchvision.transforms as transforms
 
 ## train: two lenet, mnist, one pretrained, another randomly inited, compare loss
 parser = argparse.ArgumentParser()
 parser.add_argument("-l","--learning_rate",type = float, default=0.01) # estimate: 0.2
 args = parser.parse_args()
 
-EPISODE = 10
 LEARNING_RATE = args.learning_rate
+
+class Encoder(nn.Module):
+    def __init__(self):
+        super(Encoder, self).__init__()
+        self.conv1 = nn.Sequential(         
+            nn.Conv2d(
+                in_channels=1,              
+                out_channels=16,            
+                kernel_size=4,              
+                stride=1,                   
+                padding=2,                  
+            ),                              
+            nn.ReLU(),                      
+            nn.MaxPool2d(kernel_size=2),    
+        )
+        self.conv2 = nn.Sequential(         
+            nn.Conv2d(16, 32, 4, 1, 2),     
+            nn.ReLU(),                      
+            nn.MaxPool2d(2),                
+        )
+        self.out = nn.Linear(32 * 6 * 6, 10)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        out = x.view(100, -1)
+        return out
 
 class CNN(nn.Module):
     def __init__(self):
@@ -25,7 +52,7 @@ class CNN(nn.Module):
             nn.Conv2d(
                 in_channels=1,              
                 out_channels=16,            
-                kernel_size=5,              
+                kernel_size=5,           
                 stride=1,                   
                 padding=2,                  
             ),                              
@@ -42,23 +69,25 @@ class CNN(nn.Module):
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
-        x = x.view(x.size(0), -1)       
-        output = self.out(x)
-        return output
+        out = x.view(100, -1)
+        return out
 
 loss_func = nn.CrossEntropyLoss() 
 device = torch.device("cuda")
-cnn = CNN().to(device)
-optimizer = torch.optim.Adam(cnn.parameters(), lr=LEARNING_RATE)
+
+transform = transforms.Compose(
+            [transforms.Resize((24, 24)),
+                transforms.ToTensor(),
+            ])
 train_data = datasets.MNIST(
     root = 'data',
-    train = True,                         
-    transform = ToTensor()            
+    train = True,
+    transform = transform
 )
 test_data = datasets.MNIST(
     root = 'data', 
     train = False, 
-    transform = ToTensor()
+    transform = transform
 )
 loaders = {
     'train' : torch.utils.data.DataLoader(train_data, 
@@ -68,23 +97,28 @@ loaders = {
     
     'test'  : torch.utils.data.DataLoader(test_data, 
                                         batch_size=100, 
-                                        shuffle=True, 
+                                        shuffle=False, 
                                         num_workers=1),
 }
 
 def weights_init(m):
     classname = m.__class__.__name__
-    if classname.find('Linear') != -1:
-        m.weight.data = deepcopy(cnn.out.weight.data)
-        m.bias.data = deepcopy(cnn.out.bias.data)
+    if classname.find('Conv') != -1:
+        n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+        m.weight.data.normal_(0, math.sqrt(2. / n))
+        if m.bias is not None:
+            m.bias.data.zero_()
+    elif classname.find('Linear') != -1:
+        m.weight.data.normal_(0, 0.01)
+        m.bias.data = torch.ones(m.bias.data.size())
 
-def train(num_epochs, cnn, loaders):
+def train(num_epochs, cnn, loaders, optimizer):
         cnn.train()
             
         # Train the model
         total_step = len(loaders['train'])
             
-        for epoch in range(EPISODE):
+        for epoch in range(num_epochs):####
             for i, (images, labels) in enumerate(loaders['train']):
                     
                 # gives batch data, normalize x when iterate train_loader
@@ -114,26 +148,27 @@ def test(student):
             pred_y = torch.max(test_output, 1)[1].data.squeeze()
             labels = Variable(labels).to(device)
             accuracy = (pred_y == labels).sum().item() / float(labels.size(0))
-    print('Test Accuracy of the model on the 10000 test images: %.2f' % accuracy)
+    print('Test Accuracy of the model on the 10000 test images: %.5f' % accuracy)
 
 def main():
-    # train(EPISODE, cnn, loaders)
-    # torch.save(cnn.state_dict(), './base_teacher.pth')
-    cnn = CNN()
-    cnn.load_state_dict(torch.load('./base_teacher.pth'))
-    for param in cnn.parameters():
-        param.requires_grad = False
+    # cnn = CNN()
+    # optimizer = torch.optim.Adam(cnn.parameters(), lr=LEARNING_RATE)
+    # train(10, cnn.to(device), loaders, optimizer)
+    # torch.save(cnn.state_dict(), './base_teacher_few_chnl.pth')
 
-    student = CNN()
-    student.load_state_dict(torch.load('./student.pth'))
-    for param in student.parameters():
-        param.requires_grad = False
-    student.apply(weights_init)
-    student.to(device)
-    
     # cnn.load_state_dict(torch.load('./base_teacher.pth'))
     # for param in cnn.parameters():
     #     param.requires_grad = False
+
+    student = Encoder()
+    student.load_state_dict(torch.load('./student.pth'))
+    # for param in student.parameters():
+    #     param.requires_grad = False
+    # student.out = nn.Linear(8 * 7 * 7, 10)
+    optimizer = torch.optim.Adam(student.parameters(), lr=LEARNING_RATE)
+    # student.apply(weights_init)
+    student.to(device)
+    train(10, student, loaders, optimizer)
     test(student)
     print('Done.')
 

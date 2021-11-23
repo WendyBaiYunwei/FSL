@@ -22,7 +22,7 @@ class CNN(nn.Module):
             nn.Conv2d(
                 in_channels=1,              
                 out_channels=16,            
-                kernel_size=5,              
+                kernel_size=5,           
                 stride=1,                   
                 padding=2,                  
             ),                              
@@ -35,12 +35,36 @@ class CNN(nn.Module):
             nn.MaxPool2d(2),                
         )
         self.out = nn.Linear(32 * 7 * 7, 10)
-    
+
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
-        print(x.shape)
-        # x = x.view(x.size(0), -1)
+        return x
+
+class Encoder(nn.Module):
+    def __init__(self):
+        super(Encoder, self).__init__()
+        self.conv1 = nn.Sequential(         
+            nn.Conv2d(
+                in_channels=1,              
+                out_channels=16,            
+                kernel_size=4,              
+                stride=1,                   
+                padding=2,                  
+            ),                              
+            nn.ReLU(),                      
+            nn.MaxPool2d(kernel_size=2),    
+        )
+        self.conv2 = nn.Sequential(         
+            nn.Conv2d(16, 32, 4, 1, 2),     
+            nn.ReLU(),                      
+            nn.MaxPool2d(2),                
+        )
+        self.out = nn.Linear(32 * 6 * 6, 10)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
         return x
 
 def main():
@@ -48,26 +72,43 @@ def main():
     teacher.load_state_dict(torch.load('./base_teacher.pth'))
     for param in teacher.parameters():
         param.requires_grad = False
-    student = CNN()
+    student = Encoder()
     student.load_state_dict(torch.load('./student.pth'))
     for param in student.parameters():
         param.requires_grad = False
 
+    transform = transforms.Compose(
+            [transforms.Resize((24, 24)),
+                transforms.ToTensor(),
+            ])
+    train_data_sm = datasets.MNIST(
+        root = 'data',
+        train = True,                         
+        transform = transform,
+        download = False,            
+    )
+
     train_data = datasets.MNIST(
         root = 'data',
         train = True,                         
-        transform = ToTensor(),
+        transform = transforms.ToTensor(),
         download = False,            
     )
 
     trainloader = torch.utils.data.DataLoader(train_data, 
                                         batch_size=1, 
-                                        shuffle=True, 
+                                        shuffle=False, 
                                         num_workers=1)
-
+    trainloader_sm = torch.utils.data.DataLoader(train_data_sm, 
+                                        batch_size=1, 
+                                        shuffle=False, 
+                                        num_workers=1)
+    i = 0
+    dataiter_sm = iter(trainloader_sm)
     for inputs, _ in trainloader:
+        inputs_sm, _ = next(dataiter_sm)
         for channel_i in range(1, 4):
-            sample_features = student(Variable(inputs)).view((7, 7, 32)).detach()[:, :, channel_i].squeeze()
+            sample_features = student(Variable(inputs_sm)).view((6, 6, 32)).detach()[:, :, channel_i].squeeze()
             baseline_features = teacher(Variable(inputs)).view((7, 7, 32)).detach()[:, :, channel_i].squeeze()
             img = inputs[0].detach()
             arr = [sample_features, img.squeeze(), baseline_features]
@@ -81,7 +122,9 @@ def main():
                 plt.imshow(arr[j], cmap='gray')
                 ix += 1
             plt.show()
-        break
+        i+=1
+        if i == 6:
+            break
 
     # to-do: visualize feature vectors
 if __name__ == '__main__':
