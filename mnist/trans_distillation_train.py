@@ -7,7 +7,7 @@ from torch.optim.lr_scheduler import StepLR
 from torchvision import datasets, models
 import torchvision
 import torchvision.transforms as transforms
-import torchvision.transforms.functional as F
+from self_attention_cv import TransformerEncoder
 import numpy as np
 import cv2
 import argparse
@@ -20,47 +20,25 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-l","--learning_rate",type = float, default=0.01) # estimate: 0.2
 args = parser.parse_args()
 
-EPISODE = 1
-BATCH_SIZE = 16
 LEARNING_RATE = args.learning_rate
+EPOCH = 10
+BATCH_SIZE = 100
+DIM = 28
+cropSize = 4
+cropIs = [DIM // cropSize * i for i in range(1, cropSize + 1)]
+tokenSize = (DIM // cropSize) ** 2
 torch.manual_seed(0)
-
-class CNN(nn.Module):
-    def __init__(self):
-        super(CNN, self).__init__()
-        self.conv1 = nn.Sequential(         
-            nn.Conv2d(
-                in_channels=1,              
-                out_channels=8,            
-                kernel_size=5,           
-                stride=1,                   
-                padding=2,                  
-            ),                              
-            nn.ReLU(),                      
-            nn.MaxPool2d(kernel_size=2),    
-        )
-        self.conv2 = nn.Sequential(         
-            nn.Conv2d(8, 8, 5, 1, 2),     
-            nn.ReLU(),                      
-            nn.MaxPool2d(2),                
-        )
-        self.out = nn.Linear(8 * 7 * 7, 10)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.conv2(x)
-        return x
 
 class Encoder(nn.Module):
     def __init__(self):
         super(Encoder, self).__init__()
         self.conv1 = nn.Sequential(         
-            nn.Linear(13 * 13, 7),                                                   
+            nn.Linear(28 * 28, 14),                                                   
         )
         self.conv2 = nn.Sequential(         
-            nn.Linear(7, 8 * 7 * 7),                                        
+            nn.Linear(14, 49 * 16),                                        
         )
-        self.out = nn.Linear(8 * 7 * 7, 10)
+        self.out = nn.Linear(49 * 16, 10)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -84,11 +62,26 @@ def get_loss(out, target):
     # loss = torch.squeeze(loss)
     return loss
 
+def getCrops(inputs):
+    inputs = inputs.squeeze()
+    # batch, 28, 28
+    batch = np.zeros((BATCH_SIZE, tokenSize, cropSize, cropSize))
+    for batchI, input in enumerate(inputs):
+        tokenI = 0
+        for i in cropIs:
+            for j in cropIs:
+                token = input[i - cropSize:i, j - cropSize:j]
+                batch[batchI, tokenI, :, :] = token
+                tokenI += 1
+    batch = torch.from_numpy(batch)
+    batch = torch.flatten(batch, start_dim = -2)
+    return batch
+    
 def main():
     device = torch.device("cuda")
     
-    teacher = CNN()
-    teacher.load_state_dict(torch.load('./base_teacher_few_chnl.pth'))
+    teacher = TransformerEncoder(dim=16,blocks=3,heads=4)####
+    teacher.load_state_dict(torch.load('./base_trans.pth'))
     for param in teacher.parameters():
         param.requires_grad = False
     teacher.to(device)
@@ -99,17 +92,17 @@ def main():
     optimizer = torch.optim.Adam(student.parameters(), lr=LEARNING_RATE)
     scheduler = StepLR(optimizer,step_size=1,gamma=0.9)
 
-    transform = transforms.Compose(
-                [transforms.Resize((13, 13)),
-                    transforms.ToTensor(),
-                ])
+    # transform = transforms.Compose(
+    #             [transforms.Resize((13, 13)),
+    #                 transforms.ToTensor(),
+    #             ])
 
-    train_data_sm = datasets.MNIST(
-        root = 'data',
-        train = True,                         
-        transform = transform,
-        download = False,            
-    )
+    # train_data_sm = datasets.MNIST(
+    #     root = 'data',
+    #     train = True,                         
+    #     transform = transform,
+    #     download = False,            
+    # )
 
     train_data = datasets.MNIST(
         root = 'data',
@@ -122,10 +115,10 @@ def main():
                                         batch_size=BATCH_SIZE, 
                                         shuffle=False, 
                                         num_workers=1)
-    trainloader_sm = torch.utils.data.DataLoader(train_data_sm, 
-                                        batch_size=BATCH_SIZE, 
-                                        shuffle=False, 
-                                        num_workers=1)
+    # trainloader_sm = torch.utils.data.DataLoader(train_data_sm, 
+    #                                     batch_size=BATCH_SIZE, 
+    #                                     shuffle=False, 
+    #                                     num_workers=1)
 
     print("Training...")
     
@@ -134,12 +127,15 @@ def main():
     def train(episode):
         epoch_loss = 0
         count = 0
-        dataiter_sm = iter(trainloader_sm)
+        # dataiter_sm = iter(trainloader_sm)
         for inputs, _ in trainloader:
-            baseline_features = teacher(Variable(inputs).to(device)).flatten(start_dim = 1) # 16 * 32 * 7 * 7
-            inputs_sm, _ = next(dataiter_sm)
-            inputs_sm = torch.flatten(inputs_sm, start_dim = 1)
+            inputs_sm = torch.flatten(inputs, start_dim = 1)
             sample_features = student(Variable(inputs_sm).to(device))
+
+            inputs = getCrops(inputs)
+            baseline_features = teacher(Variable(inputs).to(device).float()).flatten(start_dim = 1) # 16 * 32 * 7 * 7
+            # inputs_sm, _ = next(dataiter_sm)
+            
 
             optimizer.zero_grad()
 
@@ -154,10 +150,10 @@ def main():
                 print(count, epoch_loss / (count + 1))
             count += 1
 
-    for episode in range(EPISODE):
+    for episode in range(EPOCH):
         train(episode)
         scheduler.step()
-        torch.save(student.state_dict(), './student_noactivate.pth')
+        torch.save(student.state_dict(), './trans_student.pth')
     print('Done.')
 
 # 600/15, 800

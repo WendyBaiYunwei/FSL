@@ -1,72 +1,49 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.autograd import Variable
 from torch import optim
+from torch.optim.lr_scheduler import StepLR
 from torchvision import datasets, models
 import torchvision
-from torchvision.transforms import ToTensor
+import torchvision.transforms as transforms
+from self_attention_cv import TransformerEncoder
 import numpy as np
+import cv2
+import argparse
 import math
 import argparse
-from copy import deepcopy
-import torchvision.transforms as transforms
 
+torch.manual_seed(0)
 ## train: two lenet, mnist, one pretrained, another randomly inited, compare loss
 parser = argparse.ArgumentParser()
 parser.add_argument("-l","--learning_rate",type = float, default=0.01) # estimate: 0.2
 args = parser.parse_args()
-
 LEARNING_RATE = args.learning_rate
+EPOCH = 10
+BATCH_SIZE = 100
+DIM = 28
+cropSize = 4
+cropIs = [DIM // cropSize * i for i in range(1, cropSize + 1)]
+tokenSize = (DIM // cropSize) ** 2
+torch.manual_seed(0)
 
-class Encoder(nn.Module):
+
+class Classifier(nn.Module):
     def __init__(self):
-        super(Encoder, self).__init__()
-        self.conv1 = nn.Sequential(         
-            nn.Linear(13 * 13, 7),                                                   
-        )
-        self.conv2 = nn.Sequential(         
-            nn.Linear(7, 8 * 7 * 7),                                        
-        )
-        self.out = nn.Linear(8 * 7 * 7, 10)
+        super(Classifier, self).__init__()
+        self.out = nn.Linear(49 * 16, 10)
 
     def forward(self, x):
-        x = self.conv1(x)
-        x = self.conv2(x)
+        x = x.view(BATCH_SIZE, -1)
+        x = self.out(x)
         return x
-
-
-class CNN(nn.Module):
-    def __init__(self):
-        super(CNN, self).__init__()
-        self.conv1 = nn.Sequential(         
-            nn.Conv2d(
-                in_channels=1,              
-                out_channels=16,            
-                kernel_size=5,           
-                stride=1,                   
-                padding=2,                  
-            ),                              
-            nn.ReLU(),                      
-            nn.MaxPool2d(kernel_size=2),    
-        )
-        self.conv2 = nn.Sequential(         
-            nn.Conv2d(16, 32, 5, 1, 2),     
-            nn.ReLU(),                      
-            nn.MaxPool2d(2),                
-        )
-        self.out = nn.Linear(32 * 7 * 7, 10)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.conv2(x)
-        out = x.view(100, -1)
-        return out
 
 loss_func = nn.CrossEntropyLoss() 
 device = torch.device("cuda")
 
 transform = transforms.Compose(
-            [transforms.Resize((13, 13)),
+            [#transforms.Resize((13, 13)),
                 transforms.ToTensor(),
             ])
 train_data = datasets.MNIST(
@@ -81,12 +58,12 @@ test_data = datasets.MNIST(
 )
 loaders = {
     'train' : torch.utils.data.DataLoader(train_data, 
-                                        batch_size=100, 
+                                        batch_size=BATCH_SIZE, 
                                         shuffle=True, 
                                         num_workers=1),
     
     'test'  : torch.utils.data.DataLoader(test_data, 
-                                        batch_size=100, 
+                                        batch_size=BATCH_SIZE, 
                                         shuffle=False, 
                                         num_workers=1),
 }
@@ -102,19 +79,35 @@ def weights_init(m):
         m.weight.data.normal_(0, 0.01)
         m.bias.data = torch.ones(m.bias.data.size())
 
-def train(num_epochs, cnn, loaders, optimizer):
-        cnn.train()
+def getCrops(inputs):
+    inputs = inputs.squeeze()
+    # batch, 28, 28
+    batch = np.zeros((BATCH_SIZE, tokenSize, cropSize, cropSize))
+    for batchI, input in enumerate(inputs):
+        tokenI = 0
+        for i in cropIs:
+            for j in cropIs:
+                token = input[i - cropSize:i, j - cropSize:j]
+                batch[batchI, tokenI, :, :] = token
+                tokenI += 1
+    batch = torch.from_numpy(batch)
+    batch = torch.flatten(batch, start_dim = -2)
+    return batch
+
+def train(num_epochs, transformer, loaders, optimizer, classifier):
+        transformer.train()
             
         # Train the model
         total_step = len(loaders['train'])
             
         for epoch in range(num_epochs):####
             for i, (images, labels) in enumerate(loaders['train']):
-                images = images.flatten(start_dim = 1)
+                images = getCrops(images)
                 # gives batch data, normalize x when iterate train_loader
                 b_x = Variable(images).to(device)   # batch x
                 b_y = Variable(labels).to(device)   # batch y
-                output = cnn(b_x)            
+                embedding = transformer(b_x.float())   
+                output = classifier(embedding)         
                 loss = loss_func(output, b_y)
                 
                 # clear gradients for this training step   
@@ -129,38 +122,51 @@ def train(num_epochs, cnn, loaders, optimizer):
                     print ('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}' 
                         .format(epoch + 1, num_epochs, i + 1, total_step, loss.item()))
 
-def test(student):
+def test(model, classifier):
     # Test the model
-    student.eval()
+    model.eval()
     with torch.no_grad():
         for images, labels in loaders['test']:
-            images = images.flatten(start_dim = 1)
-            test_output = student(Variable(images).to(device))
+            images = getCrops(images)
+            embedding = model(Variable(images).to(device).float())
+            test_output = classifier(embedding)
             pred_y = torch.max(test_output, 1)[1].data.squeeze()
             labels = Variable(labels).to(device)
             accuracy = (pred_y == labels).sum().item() / float(labels.size(0))
     print('Test Accuracy of the model on the 10000 test images: %.5f' % accuracy)
 
 def main():
-    # cnn = CNN()
-    # optimizer = torch.optim.Adam(cnn.parameters(), lr=LEARNING_RATE)
-    # train(10, cnn.to(device), loaders, optimizer)
-    # torch.save(cnn.state_dict(), './base_teacher_few_chnl.pth')
+    classifier = Classifier()
+    classifier.apply(weights_init)
+    classifier.to(device)
+    transformer = TransformerEncoder(dim=16,blocks=3,heads=4)
+    optimizer = torch.optim.Adam(transformer.parameters(), lr=LEARNING_RATE)
+    train(EPOCH, transformer.to(device), loaders, optimizer, classifier)
+    torch.save(transformer.state_dict(), './base_trans.pth')
+    torch.save(classifier.state_dict(), './base_classifier.pth')
+    # classifier.load_state_dict(torch.load('./base_classifier.pth'))
+    # transformer.load_state_dict(torch.load('./base_trans.pth'))
+    for param in transformer.parameters():
+        param.requires_grad = False
+    for param in classifier.parameters():
+        param.requires_grad = False
+    test(transformer, classifier)
 
-    # cnn.load_state_dict(torch.load('./base_teacher.pth'))
-    # for param in cnn.parameters():
+    # transformer.load_state_dict(torch.load('./base_teacher.pth'))
+    # for param in transformer.parameters():
     #     param.requires_grad = False
 
-    student = Encoder()
-    student.load_state_dict(torch.load('./student_noactivate.pth'))
+    # optimizer = torch.optim.Adam(student.parameters(), lr=LEARNING_RATE)
+    # student = Encoder()
+    # student.load_state_dict(torch.load('./student_noactivate.pth'))
     # for param in student.parameters():
     #     param.requires_grad = False
     # student.out = nn.Linear(8 * 7 * 7, 10)
-    optimizer = torch.optim.Adam(student.parameters(), lr=LEARNING_RATE)
+    
     # student.apply(weights_init)
-    student.to(device)
-    train(1, student, loaders, optimizer)
-    test(student)
+    # student.to(device)
+    # train(1, student, loaders, optimizer)
+    # test(student)
     print('Done.')
 
 if __name__ == '__main__':

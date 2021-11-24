@@ -21,7 +21,7 @@ class CNN(nn.Module):
         self.conv1 = nn.Sequential(         
             nn.Conv2d(
                 in_channels=1,              
-                out_channels=16,            
+                out_channels=8,            
                 kernel_size=5,           
                 stride=1,                   
                 padding=2,                  
@@ -30,11 +30,11 @@ class CNN(nn.Module):
             nn.MaxPool2d(kernel_size=2),    
         )
         self.conv2 = nn.Sequential(         
-            nn.Conv2d(16, 32, 5, 1, 2),     
+            nn.Conv2d(8, 8, 5, 1, 2),     
             nn.ReLU(),                      
             nn.MaxPool2d(2),                
         )
-        self.out = nn.Linear(32 * 7 * 7, 10)
+        self.out = nn.Linear(8 * 7 * 7, 10)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -45,22 +45,13 @@ class Encoder(nn.Module):
     def __init__(self):
         super(Encoder, self).__init__()
         self.conv1 = nn.Sequential(         
-            nn.Conv2d(
-                in_channels=1,              
-                out_channels=16,            
-                kernel_size=4,              
-                stride=1,                   
-                padding=2,                  
-            ),                              
-            nn.ReLU(),                      
-            nn.MaxPool2d(kernel_size=2),    
+            nn.Linear(14 * 14, 7),                              
+            nn.ReLU(),                       
         )
         self.conv2 = nn.Sequential(         
-            nn.Conv2d(16, 32, 4, 1, 2),     
-            nn.ReLU(),                      
-            nn.MaxPool2d(2),                
+            nn.Linear(7, 8 * 7 * 7),                                        
         )
-        self.out = nn.Linear(32 * 6 * 6, 10)
+        self.out = nn.Linear(8 * 7 * 7, 10)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -69,7 +60,7 @@ class Encoder(nn.Module):
 
 def main():
     teacher = CNN()
-    teacher.load_state_dict(torch.load('./base_teacher.pth'))
+    teacher.load_state_dict(torch.load('./base_teacher_few_chnl.pth'))
     for param in teacher.parameters():
         param.requires_grad = False
     student = Encoder()
@@ -78,7 +69,7 @@ def main():
         param.requires_grad = False
 
     transform = transforms.Compose(
-            [transforms.Resize((24, 24)),
+            [transforms.Resize((14, 14)),
                 transforms.ToTensor(),
             ])
     train_data_sm = datasets.MNIST(
@@ -107,9 +98,10 @@ def main():
     dataiter_sm = iter(trainloader_sm)
     for inputs, _ in trainloader:
         inputs_sm, _ = next(dataiter_sm)
+        inputs_sm = inputs_sm.flatten(start_dim = 1)
         for channel_i in range(1, 4):
-            sample_features = student(Variable(inputs_sm)).view((6, 6, 32)).detach()[:, :, channel_i].squeeze()
-            baseline_features = teacher(Variable(inputs)).view((7, 7, 32)).detach()[:, :, channel_i].squeeze()
+            sample_features = student(Variable(inputs_sm)).view((7, 7, 8)).detach()[:, :, channel_i].squeeze()
+            baseline_features = teacher(Variable(inputs)).view((7, 7, 8)).detach()[:, :, channel_i].squeeze()
             img = inputs[0].detach()
             arr = [sample_features, img.squeeze(), baseline_features]
             ix = 1
