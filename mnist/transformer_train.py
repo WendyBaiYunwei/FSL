@@ -27,9 +27,9 @@ HIDDEN = args.hidden
 preTrain = args.pre_train
 
 LEARNING_RATE = args.learning_rate
-EPOCH = 4
+EPOCH = 5
 BATCH_SIZE = 100
-DIM = 8
+DIM = 28
 DIM2 = 6
 tokenSize = 4
 cropIs = [tokenSize * i for i in range(1, DIM // tokenSize + 1)]
@@ -56,7 +56,7 @@ loss_func = nn.CrossEntropyLoss()
 device = torch.device("cuda")
 
 transform = transforms.Compose(
-            [transforms.Resize((DIM, DIM)),
+            [#transforms.Resize((DIM, DIM)),
                 transforms.ToTensor(),
             ])
 train_data = datasets.MNIST(

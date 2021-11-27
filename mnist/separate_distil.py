@@ -14,18 +14,15 @@ import math
 
 ## train: two lenet, mnist, one pretrained, another randomly inited, compare loss
 parser = argparse.ArgumentParser()
-parser.add_argument("-l","--learning_rate",type = float, default=0.000001) # estimate: 0.2
+parser.add_argument("-l","--learning_rate",type = float, default=0.01) # estimate: 0.2
 args = parser.parse_args()
 torch.manual_seed(0)
 
 LEARNING_RATE = args.learning_rate ####
 EPOCH = 5
-BATCH_SIZE = 1
-DIM = 32
-tokenSize = 4
-cropIs = [tokenSize * i for i in range(1, DIM // tokenSize + 1)]
-transFn = 'pre_trans_8.pth'
-classFn = 'pre_classifier.pth'
+BATCH_SIZE = 10
+DIM = 8
+DIM2 = 4
 
 class CNN(nn.Module):
     def __init__(self):
@@ -87,11 +84,16 @@ def main():
     teacher_trans = ResNet50ViT(img_dim=DIM, pretrained_resnet=True, 
                         blocks=3, classification=False, 
                         dim_linear_block=DIM2, dim=DIM2)
-    teacher = Classifier()
-    teacher.load_state_dict(torch.load('./base_classifier.pth'))
-    for param in teacher.parameters():
+    teacher_trans.load_state_dict(torch.load('./base_trans.pth'))
+    teacher_trans.to(device)
+    for param in teacher_trans.parameters():
         param.requires_grad = False
-    teacher.to(device)
+    teacher_cls = Classifier()
+    teacher_cls.load_state_dict(torch.load('./base_classifier.pth'))
+    for param in teacher_cls.parameters():
+        param.requires_grad = False
+    teacher_cls = teacher_cls.hidden1
+    teacher_cls.to(device)
     student = CNN()
     student.apply(weights_init)
     student.to(device)
@@ -124,32 +126,32 @@ def main():
     
     student.train()
 
-    def train(episode):
+    def train():
         epoch_loss = 0
         count = 0
         # dataiter_sm = iter(trainloader_sm)
         for inputs, _ in trainloader:
-            inputs_sm = torch.flatten(inputs, start_dim = 1)
-            sample_features = student(Variable(inputs_sm).to(device))
-
-            baseline_features = teacher(Variable(inputs).to(device).float()).flatten(start_dim = 1) # 16 * 32 * 7 * 7
+            sample = student(Variable(inputs).to(device))
+            
+            baseline_features = teacher_trans(Variable(inputs).to(device).float()) # 16 * 32 * 7 * 7
+            baseline = teacher_cls(Variable(baseline_features).to(device))[0].item()
             # inputs_sm, _ = next(dataiter_sm)
             optimizer.zero_grad()
 
-            loss = get_loss(sample_features, baseline_features)
+            loss = get_loss(sample, baseline)
 
-            loss.backward(torch.ones_like(sample_features))
+            loss.backward()
 
             optimizer.step()
 
-            epoch_loss += torch.sum(torch.sum(loss)).item()
+            epoch_loss += torch.sum(loss).item()
             if count % 1000 == 0:
                 print(count, epoch_loss / (count + 1))
             count += 1
 
     for episode in range(EPOCH):
-        train(episode)
-        scheduler.step()
+        train()
+        # scheduler.step()
         torch.save(student.state_dict(), './trans_student_separate.pth')
     print('Done.')
 
