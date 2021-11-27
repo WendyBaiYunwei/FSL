@@ -19,26 +19,25 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("-l","--learning_rate",type = float, default=0.01) # estimate: 0.2
 args = parser.parse_args()
+torch.manual_seed(0)
 
 LEARNING_RATE = args.learning_rate
-EPOCH = 10
-BATCH_SIZE = 100
-DIM = 28
-cropSize = 4
-cropIs = [DIM // cropSize * i for i in range(1, cropSize + 1)]
-tokenSize = (DIM // cropSize) ** 2
-torch.manual_seed(0)
+EPOCH = 1
+BATCH_SIZE = 1
+DIM = 8
+tokenSize = 4
+cropIs = [tokenSize * i for i in range(1, DIM // tokenSize + 1)]
 
 class Encoder(nn.Module):
     def __init__(self):
         super(Encoder, self).__init__()
         self.conv1 = nn.Sequential(         
-            nn.Linear(28 * 28, 14),                                                   
+            nn.Linear(8 * 8, 34),                                                   
         )
         self.conv2 = nn.Sequential(         
-            nn.Linear(14, 49 * 16),                                        
+            nn.Linear(34, 8 * 8),                                        
         )
-        self.out = nn.Linear(49 * 16, 10)
+        self.out = nn.Linear(8 * 8, 10)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -63,14 +62,13 @@ def get_loss(out, target):
     return loss
 
 def getCrops(inputs):
-    inputs = inputs.squeeze()
-    # batch, 28, 28
-    batch = np.zeros((BATCH_SIZE, tokenSize, cropSize, cropSize))
+    inputs = inputs.squeeze(dim = 1)#btch, channel, h, w
+    batch = np.zeros((BATCH_SIZE, (DIM ** 2) // (tokenSize ** 2), tokenSize, tokenSize))
     for batchI, input in enumerate(inputs):
         tokenI = 0
         for i in cropIs:
             for j in cropIs:
-                token = input[i - cropSize:i, j - cropSize:j]
+                token = input[i - tokenSize:i, j - tokenSize:j]
                 batch[batchI, tokenI, :, :] = token
                 tokenI += 1
     batch = torch.from_numpy(batch)
@@ -80,7 +78,7 @@ def getCrops(inputs):
 def main():
     device = torch.device("cuda")
     
-    teacher = TransformerEncoder(dim=16,blocks=3,heads=4)####
+    teacher = TransformerEncoder(dim=tokenSize ** 2,blocks=3,heads=2)
     teacher.load_state_dict(torch.load('./base_trans.pth'))
     for param in teacher.parameters():
         param.requires_grad = False
@@ -92,10 +90,10 @@ def main():
     optimizer = torch.optim.Adam(student.parameters(), lr=LEARNING_RATE)
     scheduler = StepLR(optimizer,step_size=1,gamma=0.9)
 
-    # transform = transforms.Compose(
-    #             [transforms.Resize((13, 13)),
-    #                 transforms.ToTensor(),
-    #             ])
+    transform = transforms.Compose(
+                [transforms.Resize((8, 8)),
+                    transforms.ToTensor(),
+                ])
 
     # train_data_sm = datasets.MNIST(
     #     root = 'data',
@@ -107,7 +105,7 @@ def main():
     train_data = datasets.MNIST(
         root = 'data',
         train = True,                         
-        transform = transforms.ToTensor(),
+        transform = transform,
         download = False,            
     )
 
