@@ -19,10 +19,10 @@ args = parser.parse_args()
 torch.manual_seed(0)
 
 LEARNING_RATE = args.learning_rate ####
-EPOCH = 5
-BATCH_SIZE = 10
-DIM = 8
-DIM2 = 4
+EPOCH = 2
+BATCH_SIZE = 1
+DIM = 28
+DIM2 = 6
 
 class CNN(nn.Module):
     def __init__(self):
@@ -48,7 +48,8 @@ class CNN(nn.Module):
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
-        out = x.view(100, -1)
+        x = x.view(len(x), -1)
+        out = self.out(x)
         return out
 
 class Classifier(nn.Module):
@@ -131,10 +132,12 @@ def main():
         count = 0
         # dataiter_sm = iter(trainloader_sm)
         for inputs, _ in trainloader:
-            sample = student(Variable(inputs).to(device))
-            
+            sample = student(Variable(inputs).to(device)).squeeze()
+
+            inputs = inputs.repeat(1, 3, 1, 1)
             baseline_features = teacher_trans(Variable(inputs).to(device).float()) # 16 * 32 * 7 * 7
-            baseline = teacher_cls(Variable(baseline_features).to(device))[0].item()
+            baseline_features = baseline_features.flatten(start_dim = 1)
+            baseline = teacher_cls(Variable(baseline_features).to(device))[:, 0].squeeze()
             # inputs_sm, _ = next(dataiter_sm)
             optimizer.zero_grad()
 
