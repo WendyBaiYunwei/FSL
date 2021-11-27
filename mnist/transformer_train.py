@@ -7,7 +7,7 @@ from torch.optim.lr_scheduler import StepLR
 from torchvision import datasets, models
 import torchvision
 import torchvision.transforms as transforms
-from self_attention_cv import TransformerEncoder
+from self_attention_cv import TransformerEncoder, ResNet50ViT
 import numpy as np
 import cv2
 import argparse
@@ -17,15 +17,17 @@ import argparse
 torch.manual_seed(0)
 ## train: two lenet, mnist, one pretrained, another randomly inited, compare loss
 parser = argparse.ArgumentParser()
-parser.add_argument("-l","--learning_rate",type = float, default=0.01) # estimate: 0.2
-parser.add_argument("-hidden","--hidden",type = bool, default=True)
+parser.add_argument("-l","--learning_rate",type = float, default=0.0001) # estimate: 0.2
+parser.add_argument("-hidden","--hidden",type = bool, default=False)
+parser.add_argument("-pre","--pre_train",type = bool, default=True)
 args = parser.parse_args()
 
 LEARNING_RATE = args.learning_rate
 HIDDEN = args.hidden
+preTrain = args.pre_train
 
 LEARNING_RATE = args.learning_rate
-EPOCH = 15
+EPOCH = 10
 BATCH_SIZE = 100
 DIM = 8
 tokenSize = 4
@@ -53,17 +55,15 @@ class Classifier(nn.Module):
     def __init__(self):
         super(Classifier, self).__init__()
         if HIDDEN == True:
-            self.hidden1 = nn.Linear(DIM * DIM, 10)
-            self.hidden2 = nn.Linear(10, 4)
+            self.hidden1 = nn.Linear(16, 4)
             self.out = nn.Linear(4, 10)
         else:
-            self.out = nn.Linear(DIM * DIM, 10)
+            self.out = nn.Linear(16, 10)
 
     def forward(self, x):
         x = x.view(x.shape[0], -1)
         if HIDDEN == True:
             x = self.hidden1(x)
-            x = self.hidden2(x)
         x = self.out(x)
         return x
 
@@ -129,7 +129,10 @@ def train(num_epochs, transformer, loaders, optimizer, classifier):
             
         for epoch in range(num_epochs):
             for i, (images, labels) in enumerate(loaders['train']):
-                images = getCrops(images)
+                if preTrain == False:
+                    images = getCrops(images)
+                else:
+                    images = images.repeat(1, 3, 1, 1)
                 # images = images.view(len(images), -1)
                 b_x = Variable(images).to(device)   # [batch, 25, 4]
                 b_y = Variable(labels).to(device)
@@ -149,7 +152,10 @@ def test(model, classifier):
     model.eval()
     with torch.no_grad():
         for images, labels in loaders['test']:
-            images = getCrops(images)
+            if preTrain == False:
+                images = getCrops(images)
+            else:
+                images = images.repeat(1, 3, 1, 1)
             # images = images.view(len(images), -1)###
             embedding = model(Variable(images).to(device).float())
             test_output = classifier(embedding)
@@ -162,7 +168,12 @@ def main():
     classifier = Classifier()
     classifier.apply(weights_init)
     classifier.to(device)
-    transformer = TransformerEncoder(dim=tokenSize ** 2,blocks=3,heads=2)
+    if preTrain == False:
+        transformer = TransformerEncoder(dim=tokenSize ** 2,blocks=3,heads=2)
+    else:
+        transformer = ResNet50ViT(img_dim=8, pretrained_resnet=True, 
+                        blocks=3, classification=False, 
+                        dim_linear_block=4, dim=4)
     optimizer = torch.optim.Adam(transformer.parameters(), lr=LEARNING_RATE)
     train(EPOCH, transformer.to(device), loaders, optimizer, classifier)
     torch.save(transformer.state_dict(), './base_trans.pth')
