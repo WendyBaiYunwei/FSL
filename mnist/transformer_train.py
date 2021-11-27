@@ -18,24 +18,52 @@ torch.manual_seed(0)
 ## train: two lenet, mnist, one pretrained, another randomly inited, compare loss
 parser = argparse.ArgumentParser()
 parser.add_argument("-l","--learning_rate",type = float, default=0.01) # estimate: 0.2
+parser.add_argument("-hidden","--hidden",type = bool, default=True)
 args = parser.parse_args()
+
 LEARNING_RATE = args.learning_rate
-EPOCH = 10
+HIDDEN = args.hidden
+
+LEARNING_RATE = args.learning_rate
+EPOCH = 15
 BATCH_SIZE = 100
-DIM = 28
-cropSize = 4
-cropIs = [DIM // cropSize * i for i in range(1, cropSize + 1)]
-tokenSize = (DIM // cropSize) ** 2
+DIM = 8
+tokenSize = 4
+cropIs = [tokenSize * i for i in range(1, DIM // tokenSize + 1)]
+
 torch.manual_seed(0)
 
+class Encoder(nn.Module):
+    def __init__(self):
+        super(Encoder, self).__init__()
+        self.conv1 = nn.Sequential(         
+            nn.Linear(8 * 8, 34),                                                   
+        )
+        self.conv2 = nn.Sequential(         
+            nn.Linear(34, 8 * 8),                                        
+        )
+        self.out = nn.Linear(8 * 8, 10)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        return x
 
 class Classifier(nn.Module):
     def __init__(self):
         super(Classifier, self).__init__()
-        self.out = nn.Linear(49 * 16, 10)
+        if HIDDEN == True:
+            self.hidden1 = nn.Linear(DIM * DIM, 10)
+            self.hidden2 = nn.Linear(10, 4)
+            self.out = nn.Linear(4, 10)
+        else:
+            self.out = nn.Linear(DIM * DIM, 10)
 
     def forward(self, x):
-        x = x.view(BATCH_SIZE, -1)
+        x = x.view(x.shape[0], -1)
+        if HIDDEN == True:
+            x = self.hidden1(x)
+            x = self.hidden2(x)
         x = self.out(x)
         return x
 
@@ -43,7 +71,7 @@ loss_func = nn.CrossEntropyLoss()
 device = torch.device("cuda")
 
 transform = transforms.Compose(
-            [#transforms.Resize((13, 13)),
+            [transforms.Resize((DIM, DIM)),
                 transforms.ToTensor(),
             ])
 train_data = datasets.MNIST(
@@ -80,14 +108,13 @@ def weights_init(m):
         m.bias.data = torch.ones(m.bias.data.size())
 
 def getCrops(inputs):
-    inputs = inputs.squeeze()
-    # batch, 28, 28
-    batch = np.zeros((BATCH_SIZE, tokenSize, cropSize, cropSize))
+    inputs = inputs.squeeze(1)
+    batch = np.zeros((BATCH_SIZE, (DIM ** 2) // (tokenSize ** 2), tokenSize, tokenSize))
     for batchI, input in enumerate(inputs):
         tokenI = 0
         for i in cropIs:
             for j in cropIs:
-                token = input[i - cropSize:i, j - cropSize:j]
+                token = input[i - tokenSize:i, j - tokenSize:j]
                 batch[batchI, tokenI, :, :] = token
                 tokenI += 1
     batch = torch.from_numpy(batch)
@@ -100,22 +127,18 @@ def train(num_epochs, transformer, loaders, optimizer, classifier):
         # Train the model
         total_step = len(loaders['train'])
             
-        for epoch in range(num_epochs):####
+        for epoch in range(num_epochs):
             for i, (images, labels) in enumerate(loaders['train']):
                 images = getCrops(images)
-                # gives batch data, normalize x when iterate train_loader
-                b_x = Variable(images).to(device)   # batch x
-                b_y = Variable(labels).to(device)   # batch y
+                # images = images.view(len(images), -1)
+                b_x = Variable(images).to(device)   # [batch, 25, 4]
+                b_y = Variable(labels).to(device)
                 embedding = transformer(b_x.float())   
                 output = classifier(embedding)         
                 loss = loss_func(output, b_y)
-                
-                # clear gradients for this training step   
+                 
                 optimizer.zero_grad()           
-                
-                # backpropagation, compute gradients 
-                loss.backward()    
-                # apply gradients             
+                loss.backward()              
                 optimizer.step()                
                 
                 if (i+1) % 100 == 0:
@@ -123,11 +146,11 @@ def train(num_epochs, transformer, loaders, optimizer, classifier):
                         .format(epoch + 1, num_epochs, i + 1, total_step, loss.item()))
 
 def test(model, classifier):
-    # Test the model
     model.eval()
     with torch.no_grad():
         for images, labels in loaders['test']:
             images = getCrops(images)
+            # images = images.view(len(images), -1)###
             embedding = model(Variable(images).to(device).float())
             test_output = classifier(embedding)
             pred_y = torch.max(test_output, 1)[1].data.squeeze()
@@ -139,34 +162,35 @@ def main():
     classifier = Classifier()
     classifier.apply(weights_init)
     classifier.to(device)
-    transformer = TransformerEncoder(dim=16,blocks=3,heads=4)
+    transformer = TransformerEncoder(dim=tokenSize ** 2,blocks=3,heads=2)
     optimizer = torch.optim.Adam(transformer.parameters(), lr=LEARNING_RATE)
     train(EPOCH, transformer.to(device), loaders, optimizer, classifier)
     torch.save(transformer.state_dict(), './base_trans.pth')
     torch.save(classifier.state_dict(), './base_classifier.pth')
     # classifier.load_state_dict(torch.load('./base_classifier.pth'))
     # transformer.load_state_dict(torch.load('./base_trans.pth'))
-    for param in transformer.parameters():
-        param.requires_grad = False
-    for param in classifier.parameters():
-        param.requires_grad = False
+    # classifier.to(device)
+    # transformer.to(device)
+    # for param in transformer.parameters():
+    #     param.requires_grad = False
+    # for param in classifier.parameters():
+    #     param.requires_grad = False
     test(transformer, classifier)
-
+    # del transformer
     # transformer.load_state_dict(torch.load('./base_teacher.pth'))
     # for param in transformer.parameters():
     #     param.requires_grad = False
 
-    # optimizer = torch.optim.Adam(student.parameters(), lr=LEARNING_RATE)
-    # student = Encoder()
-    # student.load_state_dict(torch.load('./student_noactivate.pth'))
-    # for param in student.parameters():
-    #     param.requires_grad = False
-    # student.out = nn.Linear(8 * 7 * 7, 10)
     
-    # student.apply(weights_init)
+    # student = Encoder()
+    # student.load_state_dict(torch.load('./trans_student.pth'))
+    # optimizer = torch.optim.Adam(student.parameters(), lr=LEARNING_RATE)
     # student.to(device)
-    # train(1, student, loaders, optimizer)
-    # test(student)
+    # classifier = Classifier()
+    # classifier.load_state_dict(torch.load('./base_classifier.pth'))
+    # classifier.to(device)
+    # train(EPOCH, student, loaders, optimizer, classifier)
+    # test(student, classifier)
     print('Done.')
 
 if __name__ == '__main__':
