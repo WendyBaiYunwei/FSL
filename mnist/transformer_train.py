@@ -27,7 +27,7 @@ HIDDEN = args.hidden
 preTrain = args.pre_train
 
 LEARNING_RATE = args.learning_rate
-EPOCH = 10
+EPOCH = 5
 BATCH_SIZE = 100
 DIM = 8
 tokenSize = 4
@@ -174,7 +174,11 @@ def main():
         transformer = ResNet50ViT(img_dim=8, pretrained_resnet=True, 
                         blocks=3, classification=False, 
                         dim_linear_block=4, dim=4)
-    optimizer = torch.optim.Adam(transformer.parameters(), lr=LEARNING_RATE)
+    optimizer = torch.optim.Adam([
+        {"params": classifier.hidden1.parameters(), "lr": 0.01},
+        {"params": classifier.out.parameters(), "lr": 0.01},
+        {"params": transformer.parameters(), "lr": 0.00001},
+        ])
     train(EPOCH, transformer.to(device), loaders, optimizer, classifier)
     torch.save(transformer.state_dict(), './base_trans.pth')
     torch.save(classifier.state_dict(), './base_classifier.pth')
