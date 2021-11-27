@@ -9,65 +9,74 @@ import torchvision
 import torchvision.transforms as transforms
 from self_attention_cv import TransformerEncoder, ResNet50ViT
 import numpy as np
-import cv2
 import argparse
 import math
-import argparse
 
 torch.manual_seed(0)
 ## train: two lenet, mnist, one pretrained, another randomly inited, compare loss
 parser = argparse.ArgumentParser()
 parser.add_argument("-l","--learning_rate",type = float, default=0.0001) # estimate: 0.2
-parser.add_argument("-hidden","--hidden",type = bool, default=True)
-parser.add_argument("-pre","--pre_train",type = bool, default=True)
+parser.add_argument("-pre","--pre_trained",type = bool, default=True)
+parser.add_argument("-test","--test",type = bool, default=False)
 args = parser.parse_args()
-
 LEARNING_RATE = args.learning_rate
-HIDDEN = args.hidden
-preTrain = args.pre_train
-
-LEARNING_RATE = args.learning_rate
-EPOCH = 4
-BATCH_SIZE = 100
-DIM = 8
-DIM2 = 6
+pretrained = args.pre_trained
+testOnly = args.test
+EPOCH = 20
+BATCH_SIZE =100
+DIM = 32
 tokenSize = 4
 cropIs = [tokenSize * i for i in range(1, DIM // tokenSize + 1)]
 
 torch.manual_seed(0)
 
+class Encoder(nn.Module):
+    def __init__(self):
+        super(Encoder, self).__init__()
+        self.conv1 = nn.Sequential(         
+            nn.Linear(DIM ** 2 // 16 * DIM2, 34),                                                   
+        )
+        self.conv2 = nn.Sequential(         
+            nn.Linear(34, 64 * 16),                                        
+        )
+        self.out = nn.Linear(64 * 16, 10)
+
+    def forward(self, x):
+        x = x.reshape(x.shape[0], -1)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        return x
+
 class Classifier(nn.Module):
     def __init__(self):
         super(Classifier, self).__init__()
-        if HIDDEN == True:
-            self.hidden1 = nn.Linear(DIM ** 2 // 16 * DIM2, 4)
-            self.classifier = nn.Linear(4, 10)
-        else:
-            self.classifier = nn.Linear(16, 10)
+        self.out = nn.Linear(64 * 8, 10)
 
     def forward(self, x):
-        x = x.view(x.shape[0], -1)
-        if HIDDEN == True:
-            x = self.hidden1(x)
-        x = self.classifier(x)
+        # print(x.shape)
+        x = x.reshape(BATCH_SIZE, -1)
+        x = self.out(x)
         return x
 
 loss_func = nn.CrossEntropyLoss() 
 device = torch.device("cuda")
 
 transform = transforms.Compose(
-            [transforms.Resize((DIM, DIM)),
+            [#transforms.Resize((DIM, DIM)),
                 transforms.ToTensor(),
+                # transforms.Grayscale(1)
             ])
-train_data = datasets.MNIST(
+train_data = datasets.CIFAR10(
     root = 'data',
     train = True,
-    transform = transform
+    transform = transform,
+    download = False,
 )
-test_data = datasets.MNIST(
+test_data = datasets.CIFAR10(
     root = 'data', 
     train = False, 
-    transform = transform
+    transform = transform,
+    download = False,
 )
 loaders = {
     'train' : torch.utils.data.DataLoader(train_data, 
@@ -94,16 +103,16 @@ def weights_init(m):
 
 def getCrops(inputs):
     inputs = inputs.squeeze(1)
-    batch = np.zeros((BATCH_SIZE, (DIM ** 2) // (tokenSize ** 2), tokenSize, tokenSize))
+    batch = np.zeros((BATCH_SIZE, (DIM ** 2) // (tokenSize ** 2), 3, tokenSize, tokenSize))
     for batchI, input in enumerate(inputs):
         tokenI = 0
         for i in cropIs:
             for j in cropIs:
-                token = input[i - tokenSize:i, j - tokenSize:j]
-                batch[batchI, tokenI, :, :] = token
+                token = input[:, i - tokenSize:i, j - tokenSize:j]
+                batch[batchI, tokenI, :, :, :] = token
                 tokenI += 1
     batch = torch.from_numpy(batch)
-    batch = torch.flatten(batch, start_dim = -2)
+    # batch = torch.flatten(batch, start_dim = -2)
     return batch
 
 def train(num_epochs, transformer, loaders, optimizer, classifier):
@@ -114,11 +123,8 @@ def train(num_epochs, transformer, loaders, optimizer, classifier):
             
         for epoch in range(num_epochs):
             for i, (images, labels) in enumerate(loaders['train']):
-                if preTrain == False:
-                    images = getCrops(images)
-                else:
-                    images = images.repeat(1, 3, 1, 1)
-                # images = images.view(len(images), -1)
+                # images = getCrops(images)
+                # images = images.view(BATCH_SIZE, -1)###
                 b_x = Variable(images).to(device)   # [batch, 25, 4]
                 b_y = Variable(labels).to(device)
                 embedding = transformer(b_x.float())   
@@ -137,11 +143,8 @@ def test(model, classifier):
     model.eval()
     with torch.no_grad():
         for images, labels in loaders['test']:
-            if preTrain == False:
-                images = getCrops(images)
-            else:
-                images = images.repeat(1, 3, 1, 1)
-            # images = images.view(len(images), -1)###
+            # images = getCrops(images)
+            # images = images.view(BATCH_SIZE, -1)###
             embedding = model(Variable(images).to(device).float())
             test_output = classifier(embedding)
             pred_y = torch.max(test_output, 1)[1].data.squeeze()
@@ -150,23 +153,43 @@ def test(model, classifier):
     print('Test Accuracy of the model on the 10000 test images: %.5f' % accuracy)
 
 def main():
+    transFn = ''
+    classFn = ''    
     classifier = Classifier()
-    classifier.apply(weights_init)
-    classifier.to(device)
-    if preTrain == False:
-        transformer = TransformerEncoder(dim=tokenSize ** 2,blocks=3,heads=2)
+    # classifier.apply(weights_init)
+    # classifier.to(device)
+    if pretrained == False:
+        transformer = TransformerEncoder(dim=tokenSize ** 2,blocks=3,heads=8)
+        transFn = 'base_trans.pth'
+        classFn = 'base_classifier.pth'
     else:
-        transformer = ResNet50ViT(img_dim=DIM, pretrained_resnet=True, 
-                        blocks=3, classification=False, 
-                        dim_linear_block=DIM2, dim=DIM2)
-    optimizer = torch.optim.Adam([
-        {"params": classifier.hidden1.parameters(), "lr": 0.01},
-        {"params": classifier.classifier.parameters(), "lr": 0.01},
-        {"params": transformer.parameters(), "lr": 0.00001},
-        ])
-    train(EPOCH, transformer.to(device), loaders, optimizer, classifier)
-    torch.save(transformer.state_dict(), './base_trans.pth')
-    torch.save(classifier.state_dict(), './base_classifier.pth')
+        model = None
+        classFn = 'pre_classifier.pth'
+        if testOnly:
+            transFn = 'trans_student_separate.pth'
+            encoder = Encoder()
+            encoder.load_state_dict(torch.load(transFn))
+            encoder.to(device)
+            classifier.load_state_dict(torch.load(classFn))
+            classifier.to(device)
+            model = encoder
+        else:
+            transformer = ResNet50ViT(img_dim=32, pretrained_resnet=True, 
+                        blocks=4, classification=False, 
+                        dim_linear_block=8, dim=8)
+            transFn = 'pre_trans_8.pth'
+            classifier.to(device)
+            optimizer = torch.optim.Adam(transformer.parameters(), lr=LEARNING_RATE)
+            train(EPOCH, transformer.to(device), loaders, optimizer, classifier)
+            torch.save(transformer.state_dict(), transFn)
+            torch.save(classifier.state_dict(), classFn)
+            model = transformer
+        test(model, classifier)
+
+    # optimizer = torch.optim.Adam(transformer.parameters(), lr=LEARNING_RATE)
+    # train(EPOCH, transformer.to(device), loaders, optimizer, classifier)
+    # torch.save(transformer.state_dict(), transFn)
+    # torch.save(classifier.state_dict(), classFn)
     # classifier.load_state_dict(torch.load('./base_classifier.pth'))
     # transformer.load_state_dict(torch.load('./base_trans.pth'))
     # classifier.to(device)
@@ -175,7 +198,6 @@ def main():
     #     param.requires_grad = False
     # for param in classifier.parameters():
     #     param.requires_grad = False
-    test(transformer, classifier)
     # del transformer
     # transformer.load_state_dict(torch.load('./base_teacher.pth'))
     # for param in transformer.parameters():

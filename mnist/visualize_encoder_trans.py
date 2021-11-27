@@ -7,6 +7,7 @@ from torch.optim.lr_scheduler import StepLR
 from torchvision import datasets, models
 import torchvision
 import torchvision.transforms as transforms
+from self_attention_cv import TransformerEncoder
 import numpy as np
 import os
 import argparse
@@ -14,6 +15,12 @@ import math
 from my_fc import MyLinearLayer
 import matplotlib.pyplot as plt
 from torchvision.transforms import ToTensor
+
+EPOCH = 10
+BATCH_SIZE = 1
+DIM = 10
+tokenSize = 5
+cropIs = [tokenSize * i for i in range(1, DIM // tokenSize + 1)]
 
 class CNN(nn.Module):
     def __init__(self):
@@ -45,10 +52,10 @@ class Encoder(nn.Module):
     def __init__(self):
         super(Encoder, self).__init__()
         self.conv1 = nn.Sequential(         
-            nn.Linear(10 * 10, 30),                                                   
+            nn.Linear(10 * 10, 14),                                                   
         )
         self.conv2 = nn.Sequential(         
-            nn.Linear(30, 10 * 10),                                        
+            nn.Linear(14, 10 * 10),                                        
         )
         self.out = nn.Linear(10 * 10, 10)
 
@@ -57,31 +64,39 @@ class Encoder(nn.Module):
         x = self.conv2(x)
         return x
 
+def getCrops(inputs):
+    inputs = inputs.squeeze(dim = 1)#btch, channel, h, w
+    batch = np.zeros((BATCH_SIZE, (DIM ** 2) // (tokenSize ** 2), tokenSize, tokenSize))
+    for batchI, input in enumerate(inputs):
+        tokenI = 0
+        for i in cropIs:
+            for j in cropIs:
+                token = input[i - tokenSize:i, j - tokenSize:j]
+                batch[batchI, tokenI, :, :] = token
+                tokenI += 1
+    batch = torch.from_numpy(batch)
+    batch = torch.flatten(batch, start_dim = -2)
+    return batch
+
 def main():
-    teacher = CNN()
+    teacher = TransformerEncoder(dim=tokenSize ** 2,blocks=3,heads=2)
     teacher.load_state_dict(torch.load('./base_trans2.pth'))
     for param in teacher.parameters():
         param.requires_grad = False
     student = Encoder()
-    student.load_state_dict(torch.load('./student.pth'))
+    student.load_state_dict(torch.load('./trans_student.pth'))
     for param in student.parameters():
         param.requires_grad = False
 
     transform = transforms.Compose(
-            [transforms.Resize((14, 14)),
+            [transforms.Resize((10, 10)),
                 transforms.ToTensor(),
             ])
-    train_data_sm = datasets.MNIST(
-        root = 'data',
-        train = True,                         
-        transform = transform,
-        download = False,            
-    )
 
     train_data = datasets.MNIST(
         root = 'data',
         train = True,                         
-        transform = transforms.ToTensor(),
+        transform = transform,
         download = False,            
     )
 
@@ -89,30 +104,24 @@ def main():
                                         batch_size=1, 
                                         shuffle=False, 
                                         num_workers=1)
-    trainloader_sm = torch.utils.data.DataLoader(train_data_sm, 
-                                        batch_size=1, 
-                                        shuffle=False, 
-                                        num_workers=1)
     i = 0
-    dataiter_sm = iter(trainloader_sm)
     for inputs, _ in trainloader:
-        inputs_sm, _ = next(dataiter_sm)
-        inputs_sm = inputs_sm.flatten(start_dim = 1)
-        for channel_i in range(1, 4):
-            sample_features = student(Variable(inputs_sm)).view((7, 7, 8)).detach()[:, :, channel_i].squeeze()
-            baseline_features = teacher(Variable(inputs)).view((7, 7, 8)).detach()[:, :, channel_i].squeeze()
-            img = inputs[0].detach()
-            arr = [sample_features, img.squeeze(), baseline_features]
-            ix = 1
-            for j in range(3):
-                # specify subplot and turn of axis
-                ax = plt.subplot(1, 3, ix)
-                ax.set_xticks([])
-                ax.set_yticks([])
-                # plot filter channel in grayscale
-                plt.imshow(arr[j], cmap='gray')
-                ix += 1
-            plt.show()
+        inputs_sm = inputs.flatten(start_dim = 1)
+        sample_features = student(Variable(inputs_sm)).view((10, 10)).detach().squeeze()
+        inputs = getCrops(inputs)
+        baseline_features = teacher(Variable(inputs).float()).view((10, 10)).detach().squeeze()
+        img = inputs[0].detach()
+        arr = [sample_features, img.squeeze(), baseline_features]
+        ix = 1
+        for j in range(3):
+            # specify subplot and turn of axis
+            ax = plt.subplot(1, 3, ix)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            # plot filter channel in grayscale
+            plt.imshow(arr[j], cmap='gray')
+            ix += 1
+        plt.show()
         i+=1
         if i == 6:
             break
