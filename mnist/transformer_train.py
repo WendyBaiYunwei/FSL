@@ -25,8 +25,6 @@ args = parser.parse_args()
 LEARNING_RATE = args.learning_rate
 HIDDEN = args.hidden
 preTrain = args.pre_train
-
-LEARNING_RATE = args.learning_rate
 EPOCH = 5
 BATCH_SIZE = 100
 DIM = 28
@@ -43,7 +41,7 @@ class Classifier(nn.Module):
             self.hidden1 = nn.Linear(DIM ** 2 // 16 * DIM2, 4)
             self.classifier = nn.Linear(4, 10)
         else:
-            self.classifier = nn.Linear(16, 10)
+            self.classifier = nn.Linear(DIM ** 2 // 16 * DIM2, 10)
 
     def forward(self, x):
         x = x.view(x.shape[0], -1)
@@ -161,8 +159,8 @@ def main():
                         blocks=3, classification=False, 
                         dim_linear_block=DIM2, dim=DIM2)
     optimizer = torch.optim.Adam([
-        {"params": classifier.hidden1.parameters(), "lr": 0.01},
-        {"params": classifier.classifier.parameters(), "lr": 0.01},
+       # {"params": classifier.hidden1.parameters(), "lr": 0.01}, ####
+        {"params": classifier.parameters(), "lr": 0.00001},
         {"params": transformer.parameters(), "lr": 0.00001},
         ])
     train(EPOCH, transformer.to(device), loaders, optimizer, classifier)
