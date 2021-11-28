@@ -9,13 +9,13 @@ import argparse
 import math
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-test","--isTest",type = bool, default=True)
+parser.add_argument("-test","--isTest",type = bool, default=False)
 args = parser.parse_args()
 
 torch.manual_seed(0)
 
 isTest = args.isTest
-CHECKTEACHER = True
+CHECKTEACHER = False
 EPOCH = 1
 BATCH_SIZE = 1
 DIM = 28
