@@ -43,7 +43,7 @@ class CNN(nn.Module):
         self.conv1 = nn.Sequential(         
             nn.Conv2d(
                 in_channels=1,              
-                out_channels=8,            
+                out_channels=16,            
                 kernel_size=5,           
                 stride=1,                   
                 padding=2,                  
@@ -52,11 +52,11 @@ class CNN(nn.Module):
             nn.MaxPool2d(kernel_size=2),    
         )
         self.conv2 = nn.Sequential(         
-            nn.Conv2d(8, 8, 5, 1, 2),     
+            nn.Conv2d(16, 32, 5, 1, 2),     
             nn.ReLU(),                      
             nn.MaxPool2d(2),                
         )
-        self.out = nn.Linear(8 * 7 * 7, 10)
+        self.out = nn.Linear(32 * 7 * 7, 10)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -112,7 +112,7 @@ def train(num_epochs, cnn, loaders, optimizer):
             
         for epoch in range(num_epochs):####
             for i, (images, labels) in enumerate(loaders['train']):
-                images = images.flatten(start_dim = 1)
+                # images = images.flatten(start_dim = 1)
                 # gives batch data, normalize x when iterate train_loader
                 b_x = Variable(images).to(device)   # batch x
                 b_y = Variable(labels).to(device)   # batch y
@@ -133,36 +133,38 @@ def train(num_epochs, cnn, loaders, optimizer):
 
 def test(student):
     # Test the model
+    accuracy = 0
     student.eval()
     with torch.no_grad():
         for images, labels in loaders['test']:
-            images = images.flatten(start_dim = 1)
+            # images = images.flatten(start_dim = 1)
             test_output = student(Variable(images).to(device))
             pred_y = torch.max(test_output, 1)[1].data.squeeze()
             labels = Variable(labels).to(device)
-            accuracy = (pred_y == labels).sum().item() / float(labels.size(0))
-    print('Test Accuracy of the model on the 10000 test images: %.5f' % accuracy)
+            accuracy += (pred_y == labels).sum().item()
+    print('Test Accuracy of the model on the 10000 test images: %.5f', accuracy / 10000)
 
 def main():
-    # cnn = CNN()
-    # optimizer = torch.optim.Adam(cnn.parameters(), lr=LEARNING_RATE)
-    # train(10, cnn.to(device), loaders, optimizer)
-    # torch.save(cnn.state_dict(), './base_teacher_few_chnl.pth')
+    cnn = CNN()
+    optimizer = torch.optim.Adam(cnn.parameters(), lr=LEARNING_RATE)
+    train(15, cnn.to(device), loaders, optimizer)
+    test(cnn)
+    torch.save(cnn.state_dict(), './base_teacher.pth')
 
     # cnn.load_state_dict(torch.load('./base_teacher.pth'))
     # for param in cnn.parameters():
     #     param.requires_grad = False
 
-    student = Encoder()
-    student.load_state_dict(torch.load('./student_noactivate.pth'))
+    # student = Encoder()
+    # student.load_state_dict(torch.load('./student_noactivate.pth'))
     # for param in student.parameters():
     #     param.requires_grad = False
     # student.out = nn.Linear(8 * 7 * 7, 10)
-    optimizer = torch.optim.Adam(student.parameters(), lr=LEARNING_RATE)
+    # optimizer = torch.optim.Adam(student.parameters(), lr=LEARNING_RATE)
     # student.apply(weights_init)
-    student.to(device)
-    train(1, student, loaders, optimizer)
-    test(student)
+    # student.to(device)
+    # train(1, student, loaders, optimizer)
+    # test(student)
     print('Done.')
 
 if __name__ == '__main__':

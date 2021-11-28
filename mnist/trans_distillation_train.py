@@ -4,9 +4,10 @@ from torch.autograd import Variable
 from torch.optim.lr_scheduler import StepLR
 from torchvision import datasets
 import torchvision.transforms as transforms
-from self_attention_cv import ResNet50ViT
+from self_attention_cv import ResNet50ViT, TransformerEncoder
 import argparse
 import math
+import numpy as np
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-test","--isTest",type = bool, default=False)
@@ -20,9 +21,12 @@ EPOCH = 1
 BATCH_SIZE = 1
 DIM = 28
 DIM2 = 6
+HIDDEN = False
+tokenSize = 4
+cropIs = [tokenSize * i for i in range(1, DIM // tokenSize + 1)]
 studentPth = './trans_student.pth'
-classifierPth = './base_classifier.pth'
-teacherPth = './base_trans.pth'
+classifierPth = './base_classifier_no_hidden.pth'
+teacherPth = './base_trans_no_hidden.pth'
 
 class CNN(nn.Module):
     def __init__(self):
@@ -43,8 +47,8 @@ class CNN(nn.Module):
             nn.ReLU(),                      
             nn.MaxPool2d(2),                
         )
-        self.hidden = nn.Linear(8 * 7 * 7, 4)
-        self.out = nn.Linear(4, 10)
+        self.hidden = nn.Linear(8 * 7 * 7, DIM  * DIM) ##apply dropout
+        self.out = nn.Linear(DIM  * DIM, 10)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -56,11 +60,15 @@ class CNN(nn.Module):
 class Classifier(nn.Module):
     def __init__(self):
         super(Classifier, self).__init__()
-        self.hidden1 = nn.Linear(DIM * DIM // 16 * DIM2, 4)
-        self.classifier = nn.Linear(4, 10)
+        if HIDDEN == True:
+            self.hidden1 = nn.Linear(DIM ** 2 // 16 * DIM2, 4)
+            self.classifier = nn.Linear(4, 10)
+        else:
+            self.classifier = nn.Linear(DIM  * DIM, 10)
 
     def forward(self, x):
-        x = self.hidden1(x)
+        if HIDDEN == True:
+            x = self.hidden1(x)
         x = self.classifier(x)
         return x
 
@@ -79,6 +87,20 @@ def get_loss(out, target):
     loss = torch.square(out - target)
     return loss
 
+def getCrops(inputs):
+    inputs = inputs.squeeze(1)
+    batch = np.zeros((BATCH_SIZE, (DIM ** 2) // (tokenSize ** 2), tokenSize, tokenSize))
+    for batchI, input in enumerate(inputs):
+        tokenI = 0
+        for i in cropIs:
+            for j in cropIs:
+                token = input[i - tokenSize:i, j - tokenSize:j]
+                batch[batchI, tokenI, :, :] = token
+                tokenI += 1
+    batch = torch.from_numpy(batch)
+    batch = torch.flatten(batch, start_dim = -2)
+    return batch
+
 def train(trainloader, teacher_trans, student, classifier1, optimizer, scheduler, device):
     print("Training...")
     
@@ -89,11 +111,12 @@ def train(trainloader, teacher_trans, student, classifier1, optimizer, scheduler
         count = 0
         for inputs, _ in trainloader:
             sample_features = student(Variable(inputs).to(device))
-
-            teacherIn = inputs.repeat(1, 3, 1, 1)
+            if not HIDDEN:
+                teacherIn = getCrops(inputs)
+            else:
+                teacherIn = inputs.repeat(1, 3, 1, 1)
             baseline_features = teacher_trans(Variable(teacherIn).to(device).float()) # 16 * 32 * 7 * 7
             baseline_features = baseline_features.flatten(start_dim = 1)
-            baseline_features = classifier1(Variable(baseline_features).to(device)).flatten(start_dim = 1)
 
             optimizer.zero_grad()
 
@@ -108,7 +131,7 @@ def train(trainloader, teacher_trans, student, classifier1, optimizer, scheduler
                 print(count, epoch_loss / (count + 1))
             count += 1
 
-        scheduler.step()
+            scheduler.step()
         torch.save(student.state_dict(), studentPth)
 
 
@@ -137,29 +160,31 @@ def test(testloader, model, classifier2, device, classifier1=None):
 def main():
     device = torch.device("cuda")
 
-    teacher_trans = ResNet50ViT(img_dim=DIM, pretrained_resnet=True, 
-                    blocks=3, classification=False, 
-                    dim_linear_block=DIM2, dim=DIM2)
+    teacher_trans = TransformerEncoder(dim=tokenSize ** 2,blocks=3,heads=2)####
     teacher_trans.load_state_dict(torch.load(teacherPth))
-    teacher_trans.to(device)
     for param in teacher_trans.parameters():
         param.requires_grad = False
+    teacher_trans.to(device)
     teacher_cls0 = Classifier()
     teacher_cls0.load_state_dict(torch.load(classifierPth))
     for param in teacher_cls0.parameters():
         param.requires_grad = False
-    classifier1 = teacher_cls0.hidden1
+    if HIDDEN:
+        classifier1 = teacher_cls0.hidden
+    else:
+        classifier1 = teacher_cls0
     classifier1.to(device)
 
     student = CNN()
+    student.apply(weights_init).to(device)
+    optimizer = torch.optim.Adam([
+    #{"params": student.hidden.parameters(), "lr": 0.001},####0.002
+    {"params": student.conv1.parameters(), "lr": 0.01},
+    {"params": student.conv2.parameters(), "lr": 0.01},
+    {"params": student.hidden.parameters(), "lr": 0.01},
+    ])
     if isTest == False:
-        student.apply(weights_init).to(device)
-        optimizer = torch.optim.Adam([
-        {"params": student.hidden.parameters(), "lr": 0.001},####0.002
-        {"params": student.conv1.parameters(), "lr": 0.01},
-        {"params": student.conv2.parameters(), "lr": 0.01},
-        ])
-        scheduler = StepLR(optimizer,step_size=1,gamma=0.9)
+        scheduler = StepLR(optimizer,step_size=10000,gamma=0.95)
         train_data = datasets.MNIST(
             root = 'data',
             train = True,                         
@@ -175,22 +200,28 @@ def main():
 
         train(trainloader, teacher_trans, student, classifier1, optimizer, scheduler, device)
 
-        train_data = datasets.MNIST(
+        test_data = datasets.MNIST(
             root = 'data',
             train = False,                         
             transform = transforms.ToTensor(),
             download = False,            
         )
 
-        testloader = torch.utils.data.DataLoader(train_data, 
+        testloader = torch.utils.data.DataLoader(test_data, 
                                             batch_size=BATCH_SIZE, 
                                             shuffle=True, 
                                             num_workers=1)
-        classifier2 = teacher_cls0.classifier
+        if HIDDEN:
+            classifier2 = teacher_cls0.classifier
+        else:
+            classifier2 = teacher_cls0
         classifier2.to(device)
         test(testloader, student, classifier2, device)
     else:
-        classifier2 = teacher_cls0.classifier
+        if HIDDEN:
+            classifier2 = teacher_cls0.classifier
+        else:
+            classifier2 = teacher_cls0
         classifier2.to(device)
         test_data = datasets.MNIST(
             root = 'data',

@@ -18,14 +18,15 @@ torch.manual_seed(0)
 ## train: two lenet, mnist, one pretrained, another randomly inited, compare loss
 parser = argparse.ArgumentParser()
 parser.add_argument("-l","--learning_rate",type = float, default=0.0001) # estimate: 0.2
-parser.add_argument("-hidden","--hidden",type = bool, default=False )
-parser.add_argument("-pre","--pre_train",type = bool, default=True)
+parser.add_argument("-hidden","--hidden",type = bool, default=False)
+parser.add_argument("-pre","--pre_train",type = bool, default=False)
 args = parser.parse_args()
 
+RESUME = True
 LEARNING_RATE = args.learning_rate
 HIDDEN = args.hidden
 preTrain = args.pre_train
-EPOCH = 5
+EPOCH = 10
 BATCH_SIZE = 100
 DIM = 28
 DIM2 = 6
@@ -41,7 +42,7 @@ class Classifier(nn.Module):
             self.hidden1 = nn.Linear(DIM ** 2 // 16 * DIM2, 4)
             self.classifier = nn.Linear(4, 10)
         else:
-            self.classifier = nn.Linear(DIM ** 2 // 16 * DIM2, 10)
+            self.classifier = nn.Linear(DIM  * DIM, 10)
 
     def forward(self, x):
         x = x.view(x.shape[0], -1)
@@ -150,22 +151,29 @@ def test(model, classifier):
 
 def main():
     classifier = Classifier()
-    classifier.apply(weights_init)
+    if RESUME == True:
+        classifier.load_state_dict(torch.load('./base_classifier_no_hidden.pth'))
+    else:
+        classifier.apply(weights_init)
     classifier.to(device)
     if preTrain == False:
         transformer = TransformerEncoder(dim=tokenSize ** 2,blocks=3,heads=2)
+        if RESUME == True:
+            transformer.load_state_dict(torch.load('./base_trans_no_hidden.pth'))
+        else:
+            transformer.apply(weights_init)
     else:
         transformer = ResNet50ViT(img_dim=DIM, pretrained_resnet=True, 
                         blocks=3, classification=False, 
                         dim_linear_block=DIM2, dim=DIM2)
     optimizer = torch.optim.Adam([
        # {"params": classifier.hidden1.parameters(), "lr": 0.01}, ####
-        {"params": classifier.parameters(), "lr": 0.00001},
-        {"params": transformer.parameters(), "lr": 0.00001},
+        {"params": classifier.parameters(), "lr": 0.01},
+        {"params": transformer.parameters(), "lr": 0.01},
         ])
     train(EPOCH, transformer.to(device), loaders, optimizer, classifier)
-    torch.save(transformer.state_dict(), './base_trans.pth')
-    torch.save(classifier.state_dict(), './base_classifier.pth')
+    torch.save(transformer.state_dict(), './base_trans_no_hidden.pth')
+    torch.save(classifier.state_dict(), './base_classifier_no_hidden.pth')
     # classifier.load_state_dict(torch.load('./base_classifier.pth'))
     # transformer.load_state_dict(torch.load('./base_trans.pth'))
     # classifier.to(device)

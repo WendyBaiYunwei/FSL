@@ -20,7 +20,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-l","--learning_rate",type = float, default=0.01) # estimate: 0.2
 args = parser.parse_args()
 
-EPISODE = 1
+EPOCH = 3
 BATCH_SIZE = 16
 LEARNING_RATE = args.learning_rate
 torch.manual_seed(0)
@@ -32,39 +32,26 @@ class CNN(nn.Module):
             nn.Conv2d(
                 in_channels=1,              
                 out_channels=8,            
-                kernel_size=5,           
+                kernel_size=3,           
                 stride=1,                   
-                padding=2,                  
+                padding=1,                  
             ),                              
             nn.ReLU(),                      
             nn.MaxPool2d(kernel_size=2),    
         )
         self.conv2 = nn.Sequential(         
-            nn.Conv2d(8, 8, 5, 1, 2),     
+            nn.Conv2d(8, 8, 3, 1, 1),     
             nn.ReLU(),                      
             nn.MaxPool2d(2),                
         )
-        self.out = nn.Linear(8 * 7 * 7, 10)
+        self.hidden = nn.Linear(8 * 7 * 7, 4)
+        self.out = nn.Linear(4, 10)
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
-        return x
-
-class Encoder(nn.Module):
-    def __init__(self):
-        super(Encoder, self).__init__()
-        self.conv1 = nn.Sequential(         
-            nn.Linear(13 * 13, 7),                                                   
-        )
-        self.conv2 = nn.Sequential(         
-            nn.Linear(7, 8 * 7 * 7),                                        
-        )
-        self.out = nn.Linear(8 * 7 * 7, 10)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.conv2(x)
+        x = x.view(x.shape[0], -1)
+        x = self.hidden(x)
         return x
 
 def weights_init(m):
@@ -100,7 +87,7 @@ def main():
     scheduler = StepLR(optimizer,step_size=1,gamma=0.9)
 
     transform = transforms.Compose(
-                [transforms.Resize((13, 13)),
+                [#transforms.Resize((13, 13)),
                     transforms.ToTensor(),
                 ])
 
@@ -131,7 +118,7 @@ def main():
     
     student.train()
 
-    def train(episode):
+    def train(EPOCH):
         epoch_loss = 0
         count = 0
         dataiter_sm = iter(trainloader_sm)
@@ -154,8 +141,8 @@ def main():
                 print(count, epoch_loss / (count + 1))
             count += 1
 
-    for episode in range(EPISODE):
-        train(episode)
+    for EPOCH in range(EPOCH):
+        train(EPOCH)
         scheduler.step()
         torch.save(student.state_dict(), './student_noactivate.pth')
     print('Done.')
