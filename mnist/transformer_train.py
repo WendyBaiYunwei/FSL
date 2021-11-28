@@ -18,7 +18,7 @@ torch.manual_seed(0)
 ## train: two lenet, mnist, one pretrained, another randomly inited, compare loss
 parser = argparse.ArgumentParser()
 parser.add_argument("-l","--learning_rate",type = float, default=0.0001) # estimate: 0.2
-parser.add_argument("-hidden","--hidden",type = bool, default=True)
+parser.add_argument("-hidden","--hidden",type = bool, default=False )
 parser.add_argument("-pre","--pre_train",type = bool, default=True)
 args = parser.parse_args()
 
@@ -134,6 +134,7 @@ def train(num_epochs, transformer, loaders, optimizer, classifier):
                         .format(epoch + 1, num_epochs, i + 1, total_step, loss.item()))
 
 def test(model, classifier):
+    accuracy = 0
     model.eval()
     with torch.no_grad():
         for images, labels in loaders['test']:
@@ -146,8 +147,8 @@ def test(model, classifier):
             test_output = classifier(embedding)
             pred_y = torch.max(test_output, 1)[1].data.squeeze()
             labels = Variable(labels).to(device)
-            accuracy = (pred_y == labels).sum().item() / float(labels.size(0))
-    print('Test Accuracy of the model on the 10000 test images: %.5f' % accuracy)
+            accuracy += (pred_y == labels).sum().item()
+    print('Test Accuracy of the model on the 10000 test images:', accuracy / 10000)
 
 def main():
     classifier = Classifier()
