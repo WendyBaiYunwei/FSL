@@ -47,8 +47,8 @@ class CNNteacher(nn.Module):
             nn.ReLU(),                      
             nn.MaxPool2d(2),                
         )
-        self.hidden = nn.Linear(8 * 7 * 7, 4 * 7 * 7) ##apply dropout
-        self.out = nn.Linear(4 * 7 * 7, 10)
+        self.hidden = nn.Linear(8 * 7 * 7, DIM * DIM)
+        self.out = nn.Linear(DIM * DIM, 10)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -64,31 +64,33 @@ class CNNstudent(nn.Module):
             nn.Conv2d(
                 in_channels=1,              
                 out_channels=4,            
-                kernel_size=5,           
+                kernel_size=3,           
                 stride=1,                   
-                padding=2,                  
+                padding=1,                  
             ),                              
             nn.ReLU(),                      
             nn.MaxPool2d(kernel_size=2),    
         )
-        self.conv2 = nn.Sequential(         
-            nn.Conv2d(4, 4, 5, 1, 2),     
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(4, 4, 3, 1, 1),     
             nn.ReLU(),                      
             nn.MaxPool2d(2),                
         )
-        self.classifier = nn.Linear(4 * 7 * 7, 10)
+        self.hidden = nn.Linear(4 * 7 * 7, DIM * DIM)
+        self.classifier = nn.Linear(DIM * DIM, 10)
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
         x = x.view(x.shape[0], -1)
+        x = self.hidden(x)
         y = self.classifier(x)
         return x, y
 
 class Classifier(nn.Module):
     def __init__(self):
         super(Classifier, self).__init__()
-        self.classifier = nn.Linear(4 * 7 * 7, 10)
+        self.classifier = nn.Linear(7 * 7, 10)
 
     def forward(self, x):
         x = self.classifier(x)
@@ -158,14 +160,15 @@ def test(testloader, model, device):
     accuracy = 0
     count = 0
     for inputs, labels in testloader:
-        output = model(Variable(inputs).to(device))
-        _, pred_y = torch.max(output, 1)[1].data.squeeze()
+        _, output = model(Variable(inputs).to(device))
+        pred_y = torch.max(output, 1)[1].data.squeeze()
         labels = Variable(labels).to(device)
         accuracy += (pred_y == labels).sum().item()
         count += 1
         if count % 1000 == 0:
             print(count)
     print('Test Accuracy of the model on the 10000 test images:', accuracy  / 10000 * 100)
+    return accuracy
 
 def main():
     device = torch.device("cuda")
@@ -182,6 +185,7 @@ def main():
     #{"params": student.hidden.parameters(), "lr": 0.001}, ##train classifier
     {"params": student.conv1.parameters(), "lr": 0.001},
     {"params": student.conv2.parameters(), "lr": 0.001},
+    {"params": student.hidden.parameters(), "lr": 0.005},
     {"params": student.classifier.parameters(), "lr": 0.005},
     ])
 
@@ -219,10 +223,11 @@ def main():
                                         num_workers=1)
     bestAcc = 0
     for i in range(3):
-        trainClassifier(trainloader, student, optimizer, device)
+        trainClassifier(trainloader, student, optimizer, device) ##try freezing encoder
         acc = test(testloader, student,  device)
         if acc > bestAcc:
             torch.save(student.state_dict(), studentPth)
+            bestAcc = max(acc, bestAcc)
     
     print('Done.')
 

@@ -19,7 +19,7 @@ args = parser.parse_args()
 
 LEARNING_RATE = args.learning_rate
 HIDDEN = args.hidden
-EPOCH = 15
+EPOCH = 12
 DIM = 28
 DIM2 = 6
 
@@ -42,8 +42,8 @@ class CNN(nn.Module):
             nn.ReLU(),                      
             nn.MaxPool2d(2),                
         )
-        self.hidden = nn.Linear(8 * 7 * 7, 4 * 7 * 7) ##apply dropout
-        self.out = nn.Linear(4 * 7 * 7, 10)
+        self.hidden = nn.Linear(8 * 7 * 7, DIM * DIM)
+        self.out = nn.Linear(DIM * DIM, 10)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -151,6 +151,7 @@ def main():
         cur_acc = test(cnn)
         if cur_acc > best_acc:
             torch.save(cnn.state_dict(), './cnn_cnn/cnn_teacher.pth')
+            best_acc = max(cur_acc, best_acc)
 
     # cnn.load_state_dict(torch.load('./base_teacher.pth'))
     # for param in cnn.parameters():
