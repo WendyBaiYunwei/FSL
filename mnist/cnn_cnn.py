@@ -17,7 +17,7 @@ torch.manual_seed(0)
 
 isTest = args.isTest
 CHECKTEACHER = False
-EPOCH = 1
+EPOCH = 3
 BATCH_SIZE = 1
 DIM = 28
 DIM2 = 6
@@ -189,7 +189,7 @@ def main():
     {"params": student.classifier.parameters(), "lr": 0.005},
     ])
 
-    scheduler = StepLR(optimizer,step_size=10000,gamma=0.95)
+    scheduler = StepLR(optimizer,step_size=10000,gamma=0.97)
     train_data = datasets.MNIST(
         root = 'data',
         train = True,                         
@@ -221,6 +221,9 @@ def main():
                                         batch_size=100, 
                                         shuffle=True, 
                                         num_workers=1)
+    for param in student.parameters():
+        param.requires_grad = False
+    student.classifier = nn.Linear(DIM * DIM, 10)
     bestAcc = 0
     for i in range(3):
         trainClassifier(trainloader, student, optimizer, device) ##try freezing encoder
