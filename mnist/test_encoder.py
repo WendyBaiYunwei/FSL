@@ -42,12 +42,14 @@ class CNN(nn.Module):
             nn.ReLU(),                      
             nn.MaxPool2d(2),                
         )
-        self.out = nn.Linear(8 * 7 * 7, 10)
+        self.hidden = nn.Linear(8 * 7 * 7, 4 * 7 * 7) ##apply dropout
+        self.out = nn.Linear(4 * 7 * 7, 10)
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
         x = x.view(x.shape[0], -1)
+        x = self.hidden(x)
         x = self.out(x)
         return x
 
@@ -133,14 +135,22 @@ def test(student):
 
 def main():
     cnn = CNN()
-    optimizer = torch.optim.Adam(cnn.parameters(), lr=LEARNING_RATE)
+    # optimizer = torch.optim.Adam(cnn.parameters(), lr=LEARNING_RATE)
+
+    optimizer = torch.optim.Adam([
+    #{"params": student.hidden.parameters(), "lr": 0.001},####0.002
+        {"params": cnn.conv1.parameters(), "lr": 0.001},
+        {"params": cnn.conv2.parameters(), "lr": 0.001},
+        {"params": cnn.hidden.parameters(), "lr": 0.005},
+        {"params": cnn.out.parameters(), "lr": 0.001},
+    ])
 
     best_acc = 0
     for i in range(EPOCH):
         train(i, EPOCH, cnn.to(device), loaders, optimizer)
         cur_acc = test(cnn)
         if cur_acc > best_acc:
-            torch.save(cnn.state_dict(), './test_original_student.pth')
+            torch.save(cnn.state_dict(), './cnn_teacher.pth')
 
     # cnn.load_state_dict(torch.load('./base_teacher.pth'))
     # for param in cnn.parameters():
