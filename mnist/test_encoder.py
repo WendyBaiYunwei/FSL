@@ -1,190 +1,162 @@
-# if classifier doesn't yet exist:
-#   stage 1: transfer learning on vgg16 for mnist -> obtain classifier for mnist
-# stage 2: test encoder (version N) with the classifier
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.autograd import Variable
 from torch import optim
-from torch.optim import Adam
 from torchvision import datasets, models
-from torch.nn import CrossEntropyLoss
 import torchvision
-import torchvision.transforms as transforms
+from torchvision.transforms import ToTensor
 import numpy as np
-import os
+import math
 import argparse
-from my_fc import MyLinearLayer
-import logging
-from datetime import datetime
-import argparse
-from sklearn.metrics import accuracy_score
+from copy import deepcopy
+import torchvision.transforms as transforms
 
+## train: two lenet, mnist, one pretrained, another randomly inited, compare loss
 parser = argparse.ArgumentParser()
-parser.add_argument("-v", "--version_number", type = str, required=True)
+parser.add_argument("-l","--learning_rate",type = float, default=0.01) # estimate: 0.2
+parser.add_argument("-hidden","--hidden",type = bool, default=True)
 args = parser.parse_args()
-VERSION = args.version_number
-TEST_CLASSIFIER = False
-EPOCH = 30
-BATCH_SIZE = 128
-LEARNING_RATE = 0.0005
 
-def prepare_dataset():
-    transform = transforms.Compose(
-                [transforms.Resize((224, 224)),
-                    transforms.ToTensor(), ##normalize
-                    transforms.Normalize((0.1307,), (0.3081,))
-                ])
-    trainset = datasets.MNIST(root='./datas/mnist', download=True, transform=transform)
-    testset = datasets.MNIST(root='./datas/mnist', train = False, download=True, transform=transform)
-    return trainset, testset
+LEARNING_RATE = args.learning_rate
+HIDDEN = args.hidden
+EPOCH = 10
+DIM = 28
+DIM2 = 6
 
-def transfer_learning(trainset):
-    # prepare model
-    vgg16 = None
-    if os.path.exists('./vgg16.pth'):
-        vgg16 = models.vgg16(pretrained=False)
-        vgg16.load_state_dict(torch.load('./vgg16.pth'))
-    else:
-        vgg16 = models.vgg16(pretrained=True)
-    
-    for param in vgg16.parameters():
-        param.requires_grad = False
-    num_ftrs = vgg16.classifier[6].in_features
-    vgg16.classifier[6] = nn.Linear(num_ftrs, 10)
-    for param in vgg16.classifier[6].parameters():
-        param.requires_grad = True
-    vgg16 = vgg16.cuda()
-
-    trainloader = torch.utils.data.DataLoader(
-        trainset, shuffle=True, batch_size = BATCH_SIZE)
-    
-    print("Training...")
-    criterion = CrossEntropyLoss()
-    criterion = criterion.cuda()
-    optimizer = Adam(vgg16.classifier[6].parameters(), lr=LEARNING_RATE)
-
-    def train(epoch):
-        training_loss = []
-        i = 0
-        for inputs, labels in trainloader:
-            inputs = inputs.repeat(1, 3, 1, 1) ## change to transforms
-
-            optimizer.zero_grad()
-            out = vgg16(Variable(inputs).cuda())
-            labels = Variable(labels).cuda()
-
-            loss = criterion(out, labels)
-            training_loss.append(loss.item())
-
-            if i % 10000 == 0:
-                print(epoch + 1, np.average(training_loss))
-
-            loss.backward()
-            optimizer.step()
-
-            i += 1
-        return np.average(training_loss)
-
-    for epoch in range(EPOCH):
-        epoch_loss = train(epoch)
-        torch.save(vgg16.state_dict(), './transfer_mnist_vgg16.pth')
-        now = datetime.now()
-        current_time = now.strftime("%m/%d-%H:%M:%S")
-        logging.info("train episode:" + str(epoch+1) + " training loss:" +\
-             str(epoch_loss / len(trainloader)) +\
-            str(current_time))
-    return vgg16
-
-def test(testset, classifier, feature):
-    # test
-    testloader = torch.utils.data.DataLoader(
-        testset, shuffle=True, batch_size = BATCH_SIZE)
-
-    prediction = []
-    target = []
-    feature = feature.cuda()
-    classifier = classifier.cuda()
-    for inputs, labels in testloader:
-        inputs = inputs.repeat(1, 3, 1, 1)
-        with torch.no_grad():
-            output1 = feature(inputs.cuda()) #output: 512,7,7
-            output1 = torch.flatten(output1, start_dim = 1)
-            output = classifier(output1.cuda())
-
-        softmax = torch.exp(output).cpu()
-        prob = list(softmax.numpy())
-        predictions = np.argmax(prob, 1)
-        prediction.append(predictions)
-        target.append(labels)
-    
-    accuracy = []
-    for i in range(len(prediction)):
-        accuracy.append(accuracy_score(target[i], prediction[i]))
-
-    print('testing accuracy:', np.average(accuracy))
-    now = datetime.now()
-    current_time = now.strftime("%m/%d-%H:%M:%S")
-    logging.info('testing accuracy: '+ str(np.average(accuracy)) +\
-        ' ' + str(current_time))
-
-class CNNEncoder(nn.Module):
+class CNN(nn.Module):
     def __init__(self):
-        super(CNNEncoder, self).__init__()
-        self.layer1 = nn.Sequential(
-                        nn.Conv2d(3,64,kernel_size=3,padding=1),
-                        nn.ReLU(),
-                        nn.MaxPool2d(2, 2))
-        self.layer2 = nn.Sequential(
-                        nn.Conv2d(64,128,kernel_size=3,padding=1),
-                        nn.ReLU(),
-                        nn.MaxPool2d(2, 2))
-        self.layer3 = nn.Sequential(
-                        nn.Conv2d(128,256,kernel_size=3,padding=1),
-                        nn.ReLU(),
-                        nn.MaxPool2d(2, 2))
-        self.layer4 = nn.Sequential(
-                        nn.Conv2d(256,512,kernel_size=3,padding=1),
-                        nn.ReLU(),
-                        nn.MaxPool2d(2, 2))
-        self.layer5 = nn.Sequential(
-                        nn.Conv2d(512,512,kernel_size=3,padding=1),
-                        nn.ReLU(),
-                        nn.MaxPool2d(2, 2))
-        self.layer6 = MyLinearLayer(7, 7, 512)
+        super(CNN, self).__init__()
+        self.conv1 = nn.Sequential(         
+            nn.Conv2d(
+                in_channels=1,              
+                out_channels=8,            
+                kernel_size=5,           
+                stride=1,                   
+                padding=2,                  
+            ),                              
+            nn.ReLU(),                      
+            nn.MaxPool2d(kernel_size=2),    
+        )
+        self.conv2 = nn.Sequential(         
+            nn.Conv2d(8, 8, 5, 1, 2),     
+            nn.ReLU(),                      
+            nn.MaxPool2d(2),                
+        )
+        self.out = nn.Linear(8 * 7 * 7, 10)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = x.view(x.shape[0], -1)
+        x = self.out(x)
+        return x
+
+loss_func = nn.CrossEntropyLoss() 
+device = torch.device("cuda")
+
+transform = transforms.Compose(
+            [#transforms.Resize((13, 13)),
+                transforms.ToTensor(),
+            ])
+train_data = datasets.MNIST(
+    root = 'data',
+    train = True,
+    transform = transform
+)
+test_data = datasets.MNIST(
+    root = 'data', 
+    train = False, 
+    transform = transform
+)
+loaders = {
+    'train' : torch.utils.data.DataLoader(train_data, 
+                                        batch_size=100, 
+                                        shuffle=True, 
+                                        num_workers=1),
     
-    def forward(self,x):
-        out = self.layer1(x)
-        out = self.layer2(out)
-        out = self.layer3(out)
-        out = self.layer4(out)
-        out = self.layer5(out)
-        out = self.layer6(out)
-        return out
+    'test'  : torch.utils.data.DataLoader(test_data, 
+                                        batch_size=100, 
+                                        shuffle=False, 
+                                        num_workers=1),
+}
 
-if __name__ =='__main__':
-    logging.basicConfig(filename='mnist_test' + VERSION +'.log', level=logging.INFO)
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+        m.weight.data.normal_(0, math.sqrt(2. / n))
+        if m.bias is not None:
+            m.bias.data.zero_()
+    elif classname.find('Linear') != -1:
+        m.weight.data.normal_(0, 0.01)
+        m.bias.data = torch.ones(m.bias.data.size())
 
-    now = datetime.now()
+def train(epoch, num_epochs, cnn, loaders, optimizer):
+        cnn.train()
+            
+        # Train the model
+        total_step = len(loaders['train'])
 
-    current_time = now.strftime("%m/%d-%H:%M:%S")
-    logging.info(" Current Time = " + current_time)
-    logging.info(VERSION + '-')
+        for i, (images, labels) in enumerate(loaders['train']):
+            # images = images.flatten(start_dim = 1)
+            # gives batch data, normalize x when iterate train_loader
+            b_x = Variable(images).to(device)   # batch x
+            b_y = Variable(labels).to(device)   # batch y
+            output = cnn(b_x)            
+            loss = loss_func(output, b_y)
+            
+            # clear gradients for this training step   
+            optimizer.zero_grad()           
+            
+            # backpropagation, compute gradients 
+            loss.backward()    
+            # apply gradients             
+            optimizer.step()                
+            
+            if (i+1) % 100 == 0:
+                print ('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}' 
+                    .format(epoch + 1, num_epochs, i + 1, total_step, loss.item()))
 
-    trainset, testset = prepare_dataset()
+def test(student):
+    # Test the model
+    accuracy = 0
+    student.eval()
+    with torch.no_grad():
+        for images, labels in loaders['test']:
+            # images = images.flatten(start_dim = 1)
+            test_output = student(Variable(images).to(device))
+            pred_y = torch.max(test_output, 1)[1].data.squeeze()
+            labels = Variable(labels).to(device)
+            accuracy += (pred_y == labels).sum().item()
+    print('Test Accuracy of the model on the 10000 test images:', accuracy / 10000)
+    return accuracy
 
-    if os.path.exists('./transfer_mnist_vgg16.pth'):
-        vgg16 = models.vgg16(pretrained=False)
-        num_ftrs = vgg16.classifier[6].in_features
-        vgg16.classifier[6] = nn.Linear(num_ftrs, 10)
-        vgg16.load_state_dict(torch.load('./transfer_mnist_vgg16.pth'))
-    else:
-        vgg16 = transfer_learning(trainset)
-    if TEST_CLASSIFIER:
-        test(testset, vgg16.classifier, vgg16.features)
-    else:
-        encoder = CNNEncoder()
-        encoder.load_state_dict(torch.load('./feature_encoder_mnist' + VERSION + '.pth'))
-        test(testset, vgg16.classifier, encoder)
-    
-    print('Done')
+def main():
+    cnn = CNN()
+    optimizer = torch.optim.Adam(cnn.parameters(), lr=LEARNING_RATE)
+
+    best_acc = 0
+    for i in range(EPOCH):
+        train(i, EPOCH, cnn.to(device), loaders, optimizer)
+        cur_acc = test(cnn)
+        if cur_acc > best_acc:
+            torch.save(cnn.state_dict(), './test_original_student.pth')
+
+    # cnn.load_state_dict(torch.load('./base_teacher.pth'))
+    # for param in cnn.parameters():
+    #     param.requires_grad = False
+
+    # student = Encoder()
+    # student.load_state_dict(torch.load('./student_noactivate.pth'))
+    # for param in student.parameters():
+    #     param.requires_grad = False
+    # student.out = nn.Linear(8 * 7 * 7, 10)
+    # optimizer = torch.optim.Adam(student.parameters(), lr=LEARNING_RATE)
+    # student.apply(weights_init)
+    # student.to(device)
+    # train(1, student, loaders, optimizer)
+    # test(student)
+    print('Done.')
+
+if __name__ == '__main__':
+    main()
