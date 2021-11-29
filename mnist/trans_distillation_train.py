@@ -4,7 +4,7 @@ from torch.autograd import Variable
 from torch.optim.lr_scheduler import StepLR
 from torchvision import datasets
 import torchvision.transforms as transforms
-from self_attention_cv import ResNet50ViT, TransformerEncoder
+from self_attention_cv import TransformerEncoder
 import argparse
 import math
 import numpy as np
@@ -35,15 +35,15 @@ class CNN(nn.Module):
             nn.Conv2d(
                 in_channels=1,              
                 out_channels=8,            
-                kernel_size=3,           
+                kernel_size=5,           
                 stride=1,                   
-                padding=1,                  
+                padding=2,                  
             ),                              
             nn.ReLU(),                      
             nn.MaxPool2d(kernel_size=2),    
         )
         self.conv2 = nn.Sequential(         
-            nn.Conv2d(8, 8, 3, 1, 1),     
+            nn.Conv2d(8, 8, 5, 1, 2),     
             nn.ReLU(),                      
             nn.MaxPool2d(2),                
         )
@@ -189,7 +189,7 @@ def main():
             root = 'data',
             train = True,                         
             transform = transforms.ToTensor(),
-            download = False,            
+            download = True,            
         )
 
         trainloader = torch.utils.data.DataLoader(train_data, 
@@ -204,7 +204,7 @@ def main():
             root = 'data',
             train = False,                         
             transform = transforms.ToTensor(),
-            download = False,            
+            download = True,            
         )
 
         testloader = torch.utils.data.DataLoader(test_data, 
@@ -227,7 +227,7 @@ def main():
             root = 'data',
             train = False,                         
             transform = transforms.ToTensor(),
-            download = False,            
+            download = True,            
         )
 
         testloader = torch.utils.data.DataLoader(test_data, 

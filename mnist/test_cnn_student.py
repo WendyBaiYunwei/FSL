@@ -29,7 +29,7 @@ class CNN(nn.Module):
         self.conv1 = nn.Sequential(         
             nn.Conv2d(
                 in_channels=1,              
-                out_channels=8,            
+                out_channels=4,            
                 kernel_size=5,           
                 stride=1,                   
                 padding=2,                  
@@ -38,18 +38,18 @@ class CNN(nn.Module):
             nn.MaxPool2d(kernel_size=2),    
         )
         self.conv2 = nn.Sequential(         
-            nn.Conv2d(8, 8, 5, 1, 2),     
+            nn.Conv2d(4, 4, 5, 1, 2),     
             nn.ReLU(),                      
             nn.MaxPool2d(2),                
         )
-        self.hidden = nn.Linear(8 * 7 * 7, 4 * 7 * 7) ##apply dropout
+        # self.hidden = nn.Linear(4 * 7 * 7, 4 * 7 * 7) ##apply dropout
         self.out = nn.Linear(4 * 7 * 7, 10)
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
         x = x.view(x.shape[0], -1)
-        x = self.hidden(x)
+        # x = self.hidden(x)
         x = self.out(x)
         return x
 
@@ -139,10 +139,10 @@ def main():
 
     optimizer = torch.optim.Adam([
     #{"params": student.hidden.parameters(), "lr": 0.001},####0.002
-    {"params": cnn.conv1.parameters(), "lr": 0.001},
-    {"params": cnn.conv2.parameters(), "lr": 0.001},
-    {"params": cnn.hidden.parameters(), "lr": 0.005},
-    {"params": cnn.out.parameters(), "lr": 0.001},
+        {"params": cnn.conv1.parameters(), "lr": 0.001},
+        {"params": cnn.conv2.parameters(), "lr": 0.001},
+        #{"params": cnn.hidden.parameters(), "lr": 0.005},
+        {"params": cnn.out.parameters(), "lr": 0.001},
     ])
 
     best_acc = 0
@@ -150,7 +150,7 @@ def main():
         train(i, EPOCH, cnn.to(device), loaders, optimizer)
         cur_acc = test(cnn)
         if cur_acc > best_acc:
-            torch.save(cnn.state_dict(), './cnn_cnn/cnn_teacher.pth')
+            torch.save(cnn.state_dict(), './cnn_student.pth')
 
     # cnn.load_state_dict(torch.load('./base_teacher.pth'))
     # for param in cnn.parameters():
