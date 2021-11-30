@@ -17,7 +17,7 @@ torch.manual_seed(0)
 
 isTest = args.isTest
 CHECKTEACHER = False
-EPOCH = 3
+EPOCH = 1
 BATCH_SIZE = 1
 DIM = 28
 DIM2 = 6
@@ -185,8 +185,8 @@ def main():
     #{"params": student.hidden.parameters(), "lr": 0.001}, ##train classifier
     {"params": student.conv1.parameters(), "lr": 0.001},
     {"params": student.conv2.parameters(), "lr": 0.001},
-    {"params": student.hidden.parameters(), "lr": 0.005},
-    {"params": student.classifier.parameters(), "lr": 0.005},
+    {"params": student.hidden.parameters(), "lr": 0.003},
+    {"params": student.classifier.parameters(), "lr": 0.001},
     ])
 
     scheduler = StepLR(optimizer,step_size=10000,gamma=0.97)
@@ -223,9 +223,9 @@ def main():
                                         num_workers=1)
     for param in student.parameters():
         param.requires_grad = False
-    student.classifier = nn.Linear(DIM * DIM, 10)
+    student.classifier = nn.Linear(DIM * DIM, 10).to(device)
     bestAcc = 0
-    for i in range(3):
+    for i in range(1):
         trainClassifier(trainloader, student, optimizer, device) ##try freezing encoder
         acc = test(testloader, student,  device)
         if acc > bestAcc:
