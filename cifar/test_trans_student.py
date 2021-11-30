@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+from torch.optim.lr_scheduler import StepLR
 from torch import optim
 from torchvision import datasets, models
 import torchvision
@@ -23,17 +24,33 @@ HIDDEN = args.hidden
 EPOCH = 10
 DIM = 32
 BATCH_SIZE = 32
+tokenSize = 8
+cropIs = [tokenSize * i for i in range(1, DIM // tokenSize + 1)]
 
 class Classifier(nn.Module):
     def __init__(self):
         super(Classifier, self).__init__()
-        self.hidden = nn.Linear(64 * 16, 10)
+        self.hidden = nn.Linear(16 * 192, 100)
+        self.out = nn.Linear(100, 10)
 
     def forward(self, x):
         x = x.reshape(len(x), -1)
         x = self.hidden(x)
-        # x = self.out(x)
+        x = self.out(x)
         return x
+
+def getCrops(inputs):
+    batch = np.zeros((len(inputs), (DIM ** 2) // (tokenSize ** 2), 3, tokenSize, tokenSize))
+    for batchI, input in enumerate(inputs):
+        tokenI = 0
+        for i in cropIs:
+            for j in cropIs:
+                token = input[:, i - tokenSize:i, j - tokenSize:j]
+                batch[batchI, tokenI, :, :, :] = token
+                tokenI += 1
+    batch = torch.from_numpy(batch)
+    batch = torch.flatten(batch, start_dim = -3)
+    return batch
 
 def weights_init(m):
     classname = m.__class__.__name__
@@ -96,6 +113,7 @@ def train(epoch, num_epochs, teacher, loaders, optimizer, classifier):
         total_step = len(loaders['train'])
 
         for i, (images, labels) in enumerate(loaders['train']):
+            images = getCrops(images)
             # images = images.flatten(start_dim = 1)
             # gives batch data, normalize x when iterate train_loader
             b_x = Variable(images).to(device)   # batch x
@@ -122,7 +140,7 @@ def test(model, classifier):
     model.eval()
     with torch.no_grad():
         for images, labels in loaders['test']:
-            # images = images.flatten(start_dim = 1)
+            images = getCrops(images)
             embedding = model(Variable(images).to(device).float())
             test_output = classifier(embedding)
             pred_y = torch.max(test_output, 1)[1].data.squeeze()
@@ -132,9 +150,7 @@ def test(model, classifier):
     return accuracy
 
 def main():
-    teacher = ResNet50ViT(img_dim=32, pretrained_resnet=True, 
-                        blocks=2, classification=False, 
-                        dim_linear_block=16, dim=16)
+    teacher = TransformerEncoder(dim=tokenSize ** 2 * 3,blocks=2,heads=8)
     teacher.to(device)
 
     classifier = Classifier()
@@ -145,14 +161,14 @@ def main():
         #{"params": student.hidden.parameters(), "lr": 0.001}, ##train classifier
         {"params": teacher.parameters(), "lr": 0.001},
         {"params": classifier.hidden.parameters(), "lr": 0.005},
-        # {"params": classifier.out.parameters(), "lr": 0.0015},
+        {"params": classifier.out.parameters(), "lr": 0.0015},
     ])
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 50)
+    scheduler = StepLR(optimizer,step_size=1,gamma=0.9)
 
     best_acc = 0
     for i in range(EPOCH):
         train(i, EPOCH, teacher, loaders, optimizer, classifier)
-        scheduler.step(i-1)
+        scheduler.step()
         cur_acc = test(teacher, classifier)
         if cur_acc > best_acc:
             torch.save(teacher.state_dict(), './trans_student_test.pth')
