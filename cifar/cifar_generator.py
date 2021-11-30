@@ -28,7 +28,7 @@ class CIFAR10(VisionDataset):
 
     """
     base_folder = 'cifar-10-batches-py'
-    url = "https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz"
+    # url = "https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz"
     filename = "cifar-10-python.tar.gz"
     tgz_md5 = 'c58f30108f718f92721af3b95e74349a'
     train_list = [
@@ -62,12 +62,12 @@ class CIFAR10(VisionDataset):
 
         self.train = train  # training set or test set
 
-        if download:
-            self.download()
+        # if download:
+        #     self.download()
 
-        if not self._check_integrity():
-            raise RuntimeError('Dataset not found or corrupted.' +
-                               ' You can use download=True to download it')
+        # if not self._check_integrity():
+        #     raise RuntimeError('Dataset not found or corrupted.' +
+        #                        ' You can use download=True to download it')
 
         if self.train:
             downloaded_list = self.train_list
