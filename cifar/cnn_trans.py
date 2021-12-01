@@ -11,7 +11,6 @@ import numpy as np
 from torchvision import datasets, models
 import os
 from cifar_generator import CIFAR10
-from copy import deepcopy
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-test","--isTest",type = bool, default=False)
@@ -23,10 +22,10 @@ isTest = args.isTest
 CHECKTEACHER = False
 EPOCH = 1
 BATCH_SIZE = 1
-DIM = 224
+DIM = 28
 DIM2 = 6
 HIDDEN = False
-studentPth = './cnn_student_diffLR.pth'
+studentPth = './cnn_student_freeze_encoder.pth'
 teacherPth = './vgg_teacher_test16.pth'
 lFunc = nn.CrossEntropyLoss()
 
@@ -36,39 +35,30 @@ class CNNstudent(nn.Module):
         self.conv1 = nn.Sequential(         
             nn.Conv2d(
                 in_channels=3,              
-                out_channels=64,            
-                kernel_size=3,           
+                out_channels=16,            
+                kernel_size=5,           
                 stride=1,                   
-                padding=1,                  
-            ),                              
-            nn.ReLU(), 
-            nn.Conv2d(
-                in_channels=64,              
-                out_channels=64,            
-                kernel_size=3,           
-                stride=1,                   
-                padding=1,                  
+                padding=2,                  
             ),                              
             nn.ReLU(),                      
-            nn.MaxPool2d(kernel_size=2, stride=2),    
+            nn.MaxPool2d(kernel_size=2),    
         )
         self.conv2 = nn.Sequential(         
-            nn.Conv2d(64, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),     
-            nn.ReLU(),    
-            nn.Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
-            nn.ReLU(),                  
-            nn.MaxPool2d(2),        
+            nn.Conv2d(16, 32, 5, 1, 2),     
+            nn.ReLU(),                      
+            nn.MaxPool2d(2),      
+            nn.Conv2d(32, 32, 3, 1, 1),     
+            nn.ReLU(),                      
+            nn.MaxPool2d(2),           
         )
-        self.hidden1 = nn.Sequential(nn.Linear(128 * 56 * 56, 7 * 7))
-        self.hidden2 = nn.Sequential(nn.Linear(7 * 7, 7 * 7 * 10))
+        self.hidden = nn.Linear(7 * 7 * 32, 7 * 7 * 10)
         self.out = nn.Linear(7 * 7 * 10, 10)
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
         x = x.flatten(start_dim = 1)
-        x = self.hidden1(x)
-        x = self.hidden2(x)
+        x = self.hidden(x)
         y = self.out(x)
         return x, y
 
@@ -115,17 +105,14 @@ def train(trainloader, trainloader_sm, feature, classifier, hidden, student, opt
             if count % 1000 == 0:
                 print(count, epoch_loss / (count + 1))
             count += 1
-            # scheduler.step()
+            scheduler.step()
         torch.save(student.state_dict(), studentPth)
 
 def trainClassifier(trainloader, student, optimizer, device):
     student.train()
-    count = 0
+
     for inputs, label in trainloader:
-        if count % 10000 == 0:
-            print(count)
-        count += 1
-        x, y = student(Variable(inputs).to(device))
+        _, y = student(Variable(inputs).to(device))
         optimizer.zero_grad()
 
         label = Variable(label).to(device)
@@ -169,36 +156,27 @@ def main():
     hidden.to(device)
     
     student = CNNstudent()
-    student.apply(weights_init)
-    # student.load_state_dict(torch.load(studentPth))
-    student.conv1 = nn.Sequential(feature[:5])
-    student.conv2 = nn.Sequential(feature[5:10])
-    
+    student.apply(weights_init).to(device)
+
     optimizer = torch.optim.Adam([
         #{"params": student.hidden.parameters(), "lr": 0.001}, ##train classifier
-        {"params": student.conv1.parameters(), "lr": 0},
-        {"params": student.conv2.parameters(), "lr": 0},
-        {"params": student.hidden1.parameters(), "lr": 1e-6},
-        {"params": student.hidden2.parameters(), "lr": 1e-8},
+        {"params": student.conv1.parameters(), "lr": 0.004},
+        {"params": student.conv2.parameters(), "lr": 0.004},
+        {"params": student.hidden.parameters(), "lr": 0.01},
     ])
 
-    scheduler = StepLR(optimizer,step_size=10000,gamma=1.25)
-    transform = transforms.Compose(
-            [transforms.Resize((DIM, DIM)),
-                transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-            ])
+    scheduler = StepLR(optimizer,step_size=20000,gamma=0.97)
     train_data = CIFAR10(
         root = 'data',
         train = True,                         
-        transform = transform,
+        transform = transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor()]),
         download = False,            
     )
 
     train_data_sm = CIFAR10(
         root = 'data',
         train = True,                         
-        transform = transform,
+        transform = transforms.Compose([transforms.Resize((56, 56)), transforms.ToTensor()]),
         download = False,            
     )
 
@@ -221,12 +199,17 @@ def main():
     test_data = datasets.CIFAR10(
         root = 'data',
         train = False,                         
-        transform = transform,
+        transform = transforms.Compose([transforms.Resize((56, 56)), transforms.ToTensor()]),
         download = True,            
     )
 
     testloader = torch.utils.data.DataLoader(test_data, 
-                                        batch_size=32, 
+                                        batch_size=100, 
+                                        shuffle=True, 
+                                        num_workers=1)
+
+    trainloader = torch.utils.data.DataLoader(train_data_sm, 
+                                        batch_size=100, 
                                         shuffle=True, 
                                         num_workers=1)
     
@@ -234,26 +217,14 @@ def main():
         #{"params": student.hidden.parameters(), "lr": 0.001}, ##train classifier
         {"params": student.conv1.parameters(), "lr": 0},
         {"params": student.conv2.parameters(), "lr": 0},
-        {"params": student.hidden1.parameters(), "lr": 1e-8},
-        {"params": student.hidden2.parameters(), "lr": 1e-10},
-        {"params": student.out.parameters(), "lr": 1e-3},
+        {"params": student.hidden.parameters(), "lr": 0},
+        {"params": student.out.parameters(), "lr": 0.04},
     ])
 
-    trainClassifier(trainloader, student, optimizer, device) ##try freezing encoder
-    test(testloader, student,  device)
-
-    optimizer = torch.optim.Adam([
-        #{"params": student.hidden.parameters(), "lr": 0.001}, ##train classifier
-        {"params": student.conv1.parameters(), "lr": 0},
-        {"params": student.conv2.parameters(), "lr": 0},
-        {"params": student.hidden1.parameters(), "lr": 1e-5},
-        {"params": student.hidden2.parameters(), "lr": 1e-7},
-        {"params": student.out.parameters(), "lr": 1e-5},
-    ])
-    for i in range(5):
+    for i in range(3):
         trainClassifier(trainloader, student, optimizer, device) ##try freezing encoder
         test(testloader, student,  device)
-        torch.save(student.state_dict(), studentPth)
+    
     print('Done.')
 
 if __name__ == '__main__':

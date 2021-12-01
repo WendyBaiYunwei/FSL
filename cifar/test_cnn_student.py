@@ -19,41 +19,48 @@ args = parser.parse_args()
 
 LEARNING_RATE = args.learning_rate
 HIDDEN = args.hidden
-EPOCH = 30
-DIM = 56
+EPOCH = 20
+DIM = 224
 
-class CNN(nn.Module):
+class CNNstudent(nn.Module):
     def __init__(self):
-        super(CNN, self).__init__()
+        super(CNNstudent, self).__init__()
         self.conv1 = nn.Sequential(         
             nn.Conv2d(
                 in_channels=3,              
-                out_channels=16,            
-                kernel_size=5,           
+                out_channels=64,            
+                kernel_size=3,           
                 stride=1,                   
-                padding=2,                  
+                padding=1,                  
+            ),                              
+            nn.ReLU(), 
+            nn.Conv2d(
+                in_channels=64,              
+                out_channels=64,            
+                kernel_size=3,           
+                stride=1,                   
+                padding=1,                  
             ),                              
             nn.ReLU(),                      
-            nn.MaxPool2d(kernel_size=2),    
+            nn.MaxPool2d(kernel_size=2, stride=2),    
         )
         self.conv2 = nn.Sequential(         
-            nn.Conv2d(16, 32, 5, 1, 2),     
-            nn.ReLU(),                      
-            nn.MaxPool2d(2),      
-            nn.Conv2d(32, 32, 3, 1, 1),     
-            nn.ReLU(),                      
-            nn.MaxPool2d(2),           
+            nn.Conv2d(64, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),     
+            nn.ReLU(),    
+            nn.Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+            nn.ReLU(),                  
+            nn.MaxPool2d(2),        
         )
-        self.hidden = nn.Linear(7 * 7 * 32, 7 * 7 * 10)
+        self.hidden = nn.Sequential(nn.Linear(128 * 56 * 56, 7 * 7), nn.Linear(7 * 7, 7 * 7 * 10))
         self.out = nn.Linear(7 * 7 * 10, 10)
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
-        x = x.view(x.shape[0], -1)
+        x = x.flatten(start_dim = 1)
         x = self.hidden(x)
-        x = self.out(x)
-        return x
+        y = self.out(x)
+        return y
 
 loss_func = nn.CrossEntropyLoss() 
 device = torch.device("cuda")
@@ -138,13 +145,22 @@ def test(student):
     return accuracy
 
 def main():
-    cnn = CNN()
-    # optimizer = torch.optim.Adam(cnn.parameters(), lr=LEARNING_RATE)
+    cnn = CNNstudent()
+    cnn.apply(weights_init)
+
+    teacher = models.vgg16()
+    teacher.classifier[6] = nn.Sequential(nn.Linear(4096, 490), nn.Linear(490, 10))
+    teacher.load_state_dict(torch.load('./vgg_teacher_test16.pth'))
+    for param in teacher.parameters():
+        param.requires_grad = False
+    feature = teacher.features
+    cnn.conv1 = nn.Sequential(feature[:5])
+    cnn.conv2 = nn.Sequential(feature[5:10])
 
     optimizer = torch.optim.Adam([
     #{"params": student.hidden.parameters(), "lr": 0.001},####0.002
-    {"params": cnn.conv1.parameters(), "lr": 0.001},
-    {"params": cnn.conv2.parameters(), "lr": 0.001},
+    {"params": cnn.conv1.parameters(), "lr": 0},
+    {"params": cnn.conv2.parameters(), "lr": 0},
     {"params": cnn.hidden.parameters(), "lr": 0.005},
     {"params": cnn.out.parameters(), "lr": 0.001},
     ])

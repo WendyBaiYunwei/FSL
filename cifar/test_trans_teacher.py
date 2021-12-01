@@ -106,13 +106,14 @@ def weights_init(m):
         m.weight.data.normal_(0, 0.01)
         m.bias.data = torch.ones(m.bias.data.size())
 
-def train(epoch, num_epochs, teacher, loaders, optimizer, classifier):
+def train(epoch, num_epochs, teacher, loaders, optimizer, classifier, scheduler):
         teacher.train()
             
         # Train the model
         total_step = len(loaders['train'])
 
         for i, (images, labels) in enumerate(loaders['train']):
+            scheduler.step(i)
             images = getCrops(images)
             # images = images.flatten(start_dim = 1)
             # gives batch data, normalize x when iterate train_loader
@@ -159,15 +160,15 @@ def main():
 
     optimizer = torch.optim.Adam([
         #{"params": student.hidden.parameters(), "lr": 0.001}, ##train classifier
-        {"params": teacher.parameters(), "lr": 0.004},
-        {"params": classifier.hidden.parameters(), "lr": 0.005},
-        {"params": classifier.out.parameters(), "lr": 0.004},
+        {"params": teacher.parameters(), "lr": 0.001},
+        {"params": classifier.hidden.parameters(), "lr": 0.001},
+        {"params": classifier.out.parameters(), "lr": 0.001},
     ])
-    scheduler = StepLR(optimizer,step_size=1,gamma=0.9)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 50)
 
     best_acc = 0
     for i in range(EPOCH):
-        train(i, EPOCH, teacher, loaders, optimizer, classifier)
+        train(i, EPOCH, teacher, loaders, optimizer, classifier, scheduler)
         scheduler.step()
         cur_acc = test(teacher, classifier)
         if cur_acc > best_acc:
