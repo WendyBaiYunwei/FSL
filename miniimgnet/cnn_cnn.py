@@ -4,30 +4,26 @@ from torch.autograd import Variable
 from torch.optim.lr_scheduler import StepLR
 from torchvision import datasets
 import torchvision.transforms as transforms
-from self_attention_cv import TransformerEncoder
+from tinyDs import TinyImgNetDs
 import argparse
 import math
 import numpy as np
 from torchvision import datasets, models
 import os
-from cifar_generator import CIFAR10
 from copy import deepcopy
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-test","--isTest",type = bool, default=False)
 args = parser.parse_args()
 
 torch.manual_seed(0)
 
-isTest = args.isTest
-CHECKTEACHER = False
 EPOCH = 1
 BATCH_SIZE = 1
-DIM = 224
+DIM = 84
 DIM2 = 6
 HIDDEN = False
-studentPth = './cnn_student_diffLR.pth'
-teacherPth = './vgg_teacher_test16.pth'
+studentPth = './cnn_student_imgnet.pth'
+teacherPth = './vgg16.pth'
 lFunc = nn.CrossEntropyLoss()
 
 class CNNstudent(nn.Module):
@@ -48,10 +44,10 @@ class CNNstudent(nn.Module):
             nn.Conv2d(16, 32, 5, 1, 2),     
             nn.ReLU(),                      
             nn.MaxPool2d(2),      
-            nn.Conv2d(32, 32, 3, 1, 1),     
+            nn.Conv2d(32, 64, 3, 1, 1),     
             nn.ReLU(),
         )
-        self.out = nn.Linear(21 * 21 * 10, 10)
+        self.out = nn.Linear(19 * 19 * 64, 10)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -75,21 +71,17 @@ def get_loss(out, target):
     loss = torch.norm(target - out)
     return loss
 
-def train(trainloader, trainloader_sm, feature, classifier, hidden, student, optimizer, scheduler, device):
+def train(trainloader, feature, student, optimizer, scheduler, device):
     print("Training...")
     student.train()
 
     for i in range(EPOCH):
-        dataiter_sm = iter(trainloader_sm)
         epoch_loss = 0
         count = 0
         for inputs, _ in trainloader:
-            inputs_sm, _ = next(dataiter_sm)
-            sample_features, _ = student(Variable(inputs_sm).to(device))
+            sample_features, _ = student(Variable(inputs).to(device))
 
             baseline_features = feature(Variable(inputs).to(device)) # 16 * 32 * 7 * 7
-            baseline_features = classifier(baseline_features.flatten(start_dim = 1))
-            baseline_features = hidden(baseline_features)
 
             optimizer.zero_grad()
 
@@ -122,7 +114,6 @@ def trainClassifier(trainloader, student, optimizer, device):
 
         optimizer.step()
 
-
 def test(testloader, model, device):
     print("Testing...")
     model.eval()
@@ -142,75 +133,53 @@ def test(testloader, model, device):
 def main():
     device = torch.device("cuda")
 
-    assert os.path.exists(teacherPth)
+    # assert os.path.exists(teacherPth)
     teacher = models.vgg16(pretrained=False)
-    teacher.classifier[6] = nn.Sequential(nn.Linear(4096, 490), nn.Linear(490, 10))
-    teacher.load_state_dict(torch.load(teacherPth))
+    teacher.load_state_dict(torch.load('./vgg16.pth'))
     for param in teacher.parameters():
         param.requires_grad = False
+    teacher.classifier[6] = nn.Sequential(nn.Linear(4096, 10)) ####
     feature = teacher.features
-    classifier = teacher.classifier[:6]
-    hidden = teacher.classifier[6][0]
+    classifier = teacher.classifier
 
     feature.to(device)
     classifier.to(device)
-    hidden.to(device)
     
     student = CNNstudent()
-    student.apply(weights_init)
-    # student.load_state_dict(torch.load(studentPth))
-    student.conv1 = nn.Sequential(feature[:5])
-    student.conv2 = nn.Sequential(feature[5:10])
+    student.load_state_dict(torch.load('./student_entry2.pth'))
+    student.to(device)
     
     optimizer = torch.optim.Adam([
         #{"params": student.hidden.parameters(), "lr": 0.001}, ##train classifier
-        {"params": student.conv1.parameters(), "lr": 0},
-        {"params": student.conv2.parameters(), "lr": 0},
-        {"params": student.hidden1.parameters(), "lr": 1e-6},
-        {"params": student.hidden2.parameters(), "lr": 1e-8},
+        {"params": student.conv1.parameters(), "lr": 1e-3},
+        {"params": student.conv2.parameters(), "lr": 1e-3},
     ])
 
     scheduler = StepLR(optimizer,step_size=10000,gamma=1.25)
     transform = transforms.Compose(
-            [transforms.Resize((DIM, DIM)),
+            [
+                transforms.Resize(76),
                 transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+                transforms.Normalize((0.485, 0.456, 0.406) , (0.229, 0.224, 0.225)),
             ])
-    train_data = CIFAR10(
+    train_data = TinyImgNetDs(
         root = 'data',
-        train = True,                         
-        transform = transform,
-        download = False,            
-    )
-
-    train_data_sm = CIFAR10(
-        root = 'data',
-        train = True,                         
-        transform = transform,
-        download = False,            
+        type = 'train',                         
+        transform = transform,         
     )
 
     trainloader = torch.utils.data.DataLoader(train_data, 
                                         batch_size=BATCH_SIZE, 
                                         shuffle=True, 
                                         num_workers=1)
-    
-    trainloader_sm = torch.utils.data.DataLoader(train_data_sm, 
-                                        batch_size=BATCH_SIZE, 
-                                        shuffle=True, 
-                                        num_workers=1)
 
-    
-    student.to(device)
-
-    train(trainloader, trainloader_sm, feature, classifier, hidden, student, optimizer, scheduler, device)
+    train(trainloader, feature, student, optimizer, scheduler, device)
     torch.save(student.state_dict(), studentPth)
 
-    test_data = datasets.CIFAR10(
+    test_data = TinyImgNetDs(
         root = 'data',
-        train = False,                         
-        transform = transform,
-        download = True,            
+        type = 'test',                         
+        transform = transform,          
     )
 
     testloader = torch.utils.data.DataLoader(test_data, 
@@ -222,20 +191,16 @@ def main():
         #{"params": student.hidden.parameters(), "lr": 0.001}, ##train classifier
         {"params": student.conv1.parameters(), "lr": 0},
         {"params": student.conv2.parameters(), "lr": 0},
-        {"params": student.hidden1.parameters(), "lr": 1e-8},
-        {"params": student.hidden2.parameters(), "lr": 1e-10},
         {"params": student.out.parameters(), "lr": 1e-3},
     ])
 
     trainClassifier(trainloader, student, optimizer, device) ##try freezing encoder
-    test(testloader, student,  device)
+    test(testloader, student, device)
 
     optimizer = torch.optim.Adam([
         #{"params": student.hidden.parameters(), "lr": 0.001}, ##train classifier
         {"params": student.conv1.parameters(), "lr": 0},
         {"params": student.conv2.parameters(), "lr": 0},
-        {"params": student.hidden1.parameters(), "lr": 1e-5},
-        {"params": student.hidden2.parameters(), "lr": 1e-7},
         {"params": student.out.parameters(), "lr": 1e-5},
     ])
     for i in range(5):
