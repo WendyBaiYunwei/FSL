@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.optim.lr_scheduler import StepLR
+from torchvision import datasets, models
 import numpy as np
 import task_generator_test as tg
 import os
@@ -20,7 +21,9 @@ import scipy as sp
 import scipy.stats
 
 parser = argparse.ArgumentParser(description="One Shot Visual Recognition")
-parser.add_argument("-f","--feature_dim",type = int, default = 64)
+parser.add_argument("-en","--encoder",type = int, required=True) # 1 stands for the most basic
+parser.add_argument("-o","--out_dim",type = int, default = 19) #7, 19
+parser.add_argument("-f","--feature_dim",type = int, default = 64) #64, 512
 parser.add_argument("-r","--relation_dim",type = int, default = 8)
 parser.add_argument("-w","--class_num",type = int, default = 5)
 parser.add_argument("-s","--sample_num_per_class",type = int, default = 5)
@@ -34,6 +37,8 @@ args = parser.parse_args()
 
 
 # Hyper Parameters
+ENC_TYPE = args.encoder
+OUT_DIM = args.out_dim
 FEATURE_DIM = args.feature_dim
 RELATION_DIM = args.relation_dim
 CLASS_NUM = args.class_num
@@ -52,10 +57,39 @@ def mean_confidence_interval(data, confidence=0.95):
     h = se * sp.stats.t._ppf((1+confidence)/2., n-1)
     return m,h
 
-class CNNEncoder(nn.Module):
-    """docstring for ClassName"""
+class CNNEncoder1(nn.Module):
     def __init__(self):
-        super(CNNEncoder, self).__init__()
+        super(CNNEncoder1, self).__init__()
+        self.conv1 = nn.Sequential(         
+            nn.Conv2d(
+                in_channels=3,              
+                out_channels=16,            
+                kernel_size=5,           
+                stride=1,                   
+                padding=2,                  
+            ),                              
+            nn.ReLU(),                      
+            nn.MaxPool2d(kernel_size=2),    
+        )
+        self.conv2 = nn.Sequential(         
+            nn.Conv2d(16, 32, 5, 1, 2),     
+            nn.ReLU(),                      
+            nn.MaxPool2d(2),      
+            nn.Conv2d(32, 64, 3, 1, 1),     
+            nn.ReLU(),
+        )
+        self.out = nn.Linear(OUT_DIM * OUT_DIM * 64, 10)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        # x = x.flatten(start_dim = 1)
+        # y = self.out(x)
+        return x
+
+class CNNEncoder2(nn.Module):
+    def __init__(self):
+        super(CNNEncoder2, self).__init__()
         self.layer1 = nn.Sequential(
                         nn.Conv2d(3,64,kernel_size=3,padding=0),
                         nn.BatchNorm2d(64, momentum=1, affine=True),
@@ -74,30 +108,56 @@ class CNNEncoder(nn.Module):
                         nn.Conv2d(64,64,kernel_size=3,padding=1),
                         nn.BatchNorm2d(64, momentum=1, affine=True),
                         nn.ReLU())
+        self.final = nn.Linear(OUT_DIM * OUT_DIM * 64, 10)
 
-    def forward(self,x):
+    def forward(self, x):
         out = self.layer1(x)
         out = self.layer2(out)
         out = self.layer3(out)
         out = self.layer4(out)
-        #out = out.view(out.size(0),-1)
-        return out # 64
+        # out = out.flatten(start_dim = 1)
+        # y = self.final(out)
+        return out
 
 class RelationNetwork(nn.Module):
     """docstring for RelationNetwork"""
     def __init__(self,input_size,hidden_size):
         super(RelationNetwork, self).__init__()
         self.layer1 = nn.Sequential(
-                        nn.Conv2d(64*2,64,kernel_size=3,padding=0),
-                        nn.BatchNorm2d(64, momentum=1, affine=True),
+                        nn.Conv2d(FEATURE_DIM*2,FEATURE_DIM,kernel_size=3,padding=0),
+                        nn.BatchNorm2d(FEATURE_DIM, momentum=1, affine=True),
                         nn.ReLU(),
                         nn.MaxPool2d(2))
         self.layer2 = nn.Sequential(
-                        nn.Conv2d(64,64,kernel_size=3,padding=0),
-                        nn.BatchNorm2d(64, momentum=1, affine=True),
+                        nn.Conv2d(FEATURE_DIM,FEATURE_DIM,kernel_size=3,padding=0),
+                        nn.BatchNorm2d(FEATURE_DIM, momentum=1, affine=True),
                         nn.ReLU(),
                         nn.MaxPool2d(2))
         self.fc1 = nn.Linear(input_size*3*3,hidden_size)
+        self.fc2 = nn.Linear(hidden_size,1)
+
+    def forward(self,x):
+        out = self.layer1(x)
+        out = self.layer2(out)
+        out = out.view(out.size(0),-1)
+        out = F.relu(self.fc1(out))
+        out = F.sigmoid(self.fc2(out))
+        return out
+
+class RelationNetwork2(nn.Module):
+    """docstring for RelationNetwork"""
+    def __init__(self,input_size,hidden_size):
+        super(RelationNetwork2, self).__init__()
+        self.layer1 = nn.Sequential(
+                        nn.Conv2d(FEATURE_DIM*2,FEATURE_DIM,kernel_size=3,padding=1),
+                        nn.BatchNorm2d(FEATURE_DIM, momentum=1, affine=True),
+                        nn.ReLU(),
+                        nn.MaxPool2d(2))
+        self.layer2 = nn.Sequential(
+                        nn.Conv2d(FEATURE_DIM,FEATURE_DIM//2,kernel_size=3,padding=1),
+                        nn.BatchNorm2d(FEATURE_DIM//2, momentum=1, affine=True),
+                        nn.ReLU())
+        self.fc1 = nn.Linear(256*3*3,hidden_size)
         self.fc2 = nn.Linear(hidden_size,1)
 
     def forward(self,x):
@@ -132,8 +192,21 @@ def main():
     # Step 2: init neural networks
     print("init neural networks")
 
-    feature_encoder = CNNEncoder()
-    relation_network = RelationNetwork(FEATURE_DIM,RELATION_DIM)
+    if ENC_TYPE == 1:
+        feature_encoder = CNNEncoder1()
+    elif ENC_TYPE == 2:
+        feature_encoder = CNNEncoder2()
+    else:
+        teacher = models.vgg16(pretrained=False)
+        teacher.load_state_dict(torch.load('./vgg16.pth'))
+        feature_encoder = teacher.features
+        for param in feature_encoder.parameters():
+            param.requires_grad = False
+    
+    if ENC_TYPE == 1 or ENC_TYPE == 2:
+        relation_network = RelationNetwork(FEATURE_DIM,RELATION_DIM)
+    else:
+        relation_network = RelationNetwork2(FEATURE_DIM // 2,RELATION_DIM)
 
     feature_encoder.apply(weights_init)
     relation_network.apply(weights_init)
@@ -146,12 +219,12 @@ def main():
     relation_network_optim = torch.optim.Adam(relation_network.parameters(),lr=LEARNING_RATE)
     relation_network_scheduler = StepLR(relation_network_optim,step_size=100000,gamma=0.5)
 
-    if os.path.exists(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
-        feature_encoder.load_state_dict(torch.load(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-        print("load feature encoder success")
-    if os.path.exists(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
-        relation_network.load_state_dict(torch.load(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-        print("load relation network success")
+    # if os.path.exists(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot" + str(ENC_TYPE) + ".pkl")):
+    #     feature_encoder.load_state_dict(torch.load(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot" + str(ENC_TYPE) + ".pkl")))
+    #     print("load feature encoder success")
+    # if os.path.exists(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot" + str(ENC_TYPE) + ".pkl")):
+    #     relation_network.load_state_dict(torch.load(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot" + str(ENC_TYPE) + ".pkl")))
+    #     print("load relation network success")
 
     # Step 3: build graph
     print("Training...")
@@ -167,16 +240,19 @@ def main():
         # sample_dataloader is to obtain previous samples for compare
         # batch_dataloader is to batch samples for training
         task = tg.MiniImagenetTask(metatrain_folders,CLASS_NUM,SAMPLE_NUM_PER_CLASS,BATCH_NUM_PER_CLASS)
-        sample_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False)
-        batch_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=BATCH_NUM_PER_CLASS,split="test",shuffle=True)
+        sample_dataloader = tg.get_mini_imagenet_data_loader(task,ENC_TYPE,num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False)
+        batch_dataloader = tg.get_mini_imagenet_data_loader(task,ENC_TYPE,num_per_class=BATCH_NUM_PER_CLASS,split="test",shuffle=True)
 
         # sample datas
         samples,sample_labels = sample_dataloader.__iter__().next() #25*3*84*84
         batches,batch_labels = batch_dataloader.__iter__().next()
 
         # calculate features
-        sample_features = feature_encoder(Variable(samples).cuda(GPU)) # 25*64*19*19
-        sample_features = sample_features.view(CLASS_NUM,SAMPLE_NUM_PER_CLASS,FEATURE_DIM,19,19)
+        sample_features = feature_encoder(Variable(samples).cuda(GPU)) # 25*64*OUT_DIM*OUT_DIM
+        if ENC_TYPE == 1 or ENC_TYPE == 2:
+            sample_features = sample_features.view(CLASS_NUM,SAMPLE_NUM_PER_CLASS,FEATURE_DIM,OUT_DIM,OUT_DIM)
+        else:
+            sample_features = sample_features.view(CLASS_NUM,SAMPLE_NUM_PER_CLASS,FEATURE_DIM,7,7)
         sample_features = torch.sum(sample_features,1).squeeze(1)
         batch_features = feature_encoder(Variable(batches).cuda(GPU)) # 20x64*5*5
 
@@ -186,7 +262,10 @@ def main():
         sample_features_ext = sample_features.unsqueeze(0).repeat(BATCH_NUM_PER_CLASS*CLASS_NUM,1,1,1,1)
         batch_features_ext = batch_features.unsqueeze(0).repeat(CLASS_NUM,1,1,1,1)
         batch_features_ext = torch.transpose(batch_features_ext,0,1)
-        relation_pairs = torch.cat((sample_features_ext,batch_features_ext),2).view(-1,FEATURE_DIM*2,19,19)
+        if ENC_TYPE == 1 or ENC_TYPE == 2:
+            relation_pairs = torch.cat((sample_features_ext,batch_features_ext),2).view(-1,FEATURE_DIM*2,OUT_DIM,OUT_DIM)
+        else:
+            relation_pairs = torch.cat((sample_features_ext,batch_features_ext),2).view(-1,FEATURE_DIM*2,7,7)
         relations = relation_network(relation_pairs).view(-1,CLASS_NUM)
 
         mse = nn.MSELoss().cuda(GPU)
@@ -209,7 +288,7 @@ def main():
 
 
         if (episode+1)%100 == 0:
-                print("episode:",episode+1,"loss",loss.data[0])
+                print("episode:",episode+1,"loss",loss.item())
 
         if episode%5000 == 0:
 
@@ -219,16 +298,19 @@ def main():
             for i in range(TEST_EPISODE):
                 total_rewards = 0
                 task = tg.MiniImagenetTask(metatest_folders,CLASS_NUM,SAMPLE_NUM_PER_CLASS,15)
-                sample_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False)
+                sample_dataloader = tg.get_mini_imagenet_data_loader(task,ENC_TYPE,num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False)
                 num_per_class = 5
-                test_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=num_per_class,split="test",shuffle=False)
+                test_dataloader = tg.get_mini_imagenet_data_loader(task,ENC_TYPE,num_per_class=num_per_class,split="test",shuffle=False)
 
                 sample_images,sample_labels = sample_dataloader.__iter__().next()
                 for test_images,test_labels in test_dataloader:
                     batch_size = test_labels.shape[0]
                     # calculate features
                     sample_features = feature_encoder(Variable(sample_images).cuda(GPU)) # 5x64
-                    sample_features = sample_features.view(CLASS_NUM,SAMPLE_NUM_PER_CLASS,FEATURE_DIM,19,19)
+                    if ENC_TYPE == 1 or ENC_TYPE == 2:
+                        sample_features = sample_features.view(CLASS_NUM,SAMPLE_NUM_PER_CLASS,FEATURE_DIM,OUT_DIM,OUT_DIM)
+                    else:
+                        sample_features = sample_features.view(CLASS_NUM,SAMPLE_NUM_PER_CLASS,FEATURE_DIM,7,7)
                     sample_features = torch.sum(sample_features,1).squeeze(1)
                     test_features = feature_encoder(Variable(test_images).cuda(GPU)) # 20x64
 
@@ -239,7 +321,10 @@ def main():
 
                     test_features_ext = test_features.unsqueeze(0).repeat(1*CLASS_NUM,1,1,1,1)
                     test_features_ext = torch.transpose(test_features_ext,0,1)
-                    relation_pairs = torch.cat((sample_features_ext,test_features_ext),2).view(-1,FEATURE_DIM*2,19,19)
+                    if ENC_TYPE == 1 or ENC_TYPE == 2:
+                        relation_pairs = torch.cat((sample_features_ext,test_features_ext),2).view(-1,FEATURE_DIM*2,OUT_DIM,OUT_DIM)
+                    else:
+                        relation_pairs = torch.cat((sample_features_ext,test_features_ext),2).view(-1,FEATURE_DIM*2,OUT_DIM,OUT_DIM)
                     relations = relation_network(relation_pairs).view(-1,CLASS_NUM)
 
                     _,predict_labels = torch.max(relations.data,1)
@@ -260,16 +345,12 @@ def main():
             if test_accuracy > last_accuracy:
 
                 # save networks
-                torch.save(feature_encoder.state_dict(),str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
-                torch.save(relation_network.state_dict(),str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+                torch.save(feature_encoder.state_dict(),str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot" + str(ENC_TYPE) + ".pkl"))
+                torch.save(relation_network.state_dict(),str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot" + str(ENC_TYPE) + ".pkl"))
 
                 print("save networks for episode:",episode)
 
                 last_accuracy = test_accuracy
-
-
-
-
 
 if __name__ == '__main__':
     main()
