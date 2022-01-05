@@ -100,6 +100,7 @@ ENV/
 .mypy_cache/
 .DS_Store
 
+encoder_distil/*
 datas/*
 miniimagenet/checkpoint/vgg16.pth
 vgg16-pretrained/hub/checkpoints/vgg16.pth
