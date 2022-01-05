@@ -122,7 +122,6 @@ def trainClassifier(trainloader, student, optimizer, device):
 
         optimizer.step()
 
-
 def test(testloader, model, device):
     print("Testing...")
     model.eval()

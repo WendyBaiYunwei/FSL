@@ -130,3 +130,9 @@ mnist/feature_encoder_mnist1.pth
 yw_cloud/
 mnist/data/
 cifar/cifar-data/
+*.pkl
+*.tar
+*.DS_Store
+*.log
+pretrained_teacher_models/
+*.zip
