@@ -66,17 +66,16 @@ loss_func = nn.CrossEntropyLoss()
 device = torch.device("cuda")
 
 transform = transforms.Compose(
-            [transforms.Resize((DIM, DIM)),
-                transforms.ToTensor(),
-            ])
+            [transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))])
 train_data = datasets.CIFAR10(
-    root = 'data',
+    root = './data-cifar10',
     train = True,
     transform = transform,
     download = False
 )
 test_data = datasets.CIFAR10(
-    root = 'data', 
+    root = './data-cifar10', 
     train = False, 
     transform = transform,
     download = False
