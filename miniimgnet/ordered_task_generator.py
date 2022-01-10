@@ -11,7 +11,8 @@ class OrderedTG(Dataset):
         dbfile = open('pToDiff.pkl', 'rb')     
         pairToK = pickle.load(dbfile)
         dbfile.close()
-        pairToK = sorted(pairToK.items(), key = lambda x : x[1], reverse=True) 
+        # print(pairToK)
+        pairToK = sorted(pairToK.items(), key = lambda x : x[1], reverse=False) ##true 
         pairToK = dict(pairToK)
         self.queryPaths = []
         self.queryYs = []

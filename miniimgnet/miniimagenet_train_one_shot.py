@@ -27,13 +27,13 @@ parser.add_argument("-f","--feature_dim",type = int, default = 64)
 parser.add_argument("-r","--relation_dim",type = int, default = 8)
 parser.add_argument("-w","--class_num",type = int, default = 5)
 parser.add_argument("-s","--sample_num_per_class",type = int, default = 1)
-parser.add_argument("-b","--batch_num_per_class",type = int, default = 15)
-parser.add_argument("-e","--episode",type = int, default= 6000) #500000
+parser.add_argument("-b","--batch_num_per_class",type = int, default = 1)
+parser.add_argument("-e","--episode",type = int, default= 500000) #500000
 parser.add_argument("-t","--test_episode", type = int, default = 600)
 parser.add_argument("-l","--learning_rate", type = float, default = 0.001)
 parser.add_argument("-g","--gpu",type=int, default=0)
 parser.add_argument("-u","--hidden_unit",type=int,default=10)
-parser.add_argument("-o","--ordered",type=bool,default=True)
+parser.add_argument("-o","--ordered",type=bool,default=False)
 args = parser.parse_args()
 
 # Hyper Parameters
@@ -156,12 +156,12 @@ def main():
     relation_network_optim = torch.optim.Adam(relation_network.parameters(),lr=LEARNING_RATE)
     relation_network_scheduler = StepLR(relation_network_optim,step_size=100000,gamma=0.5)
 
-    if os.path.exists(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
-        feature_encoder.load_state_dict(torch.load(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-        print("load feature encoder success")
-    if os.path.exists(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
-        relation_network.load_state_dict(torch.load(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-        print("load relation network success")
+    # if os.path.exists(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
+    #     feature_encoder.load_state_dict(torch.load(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
+    #     print("load feature encoder success")
+    # if os.path.exists(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
+    #     relation_network.load_state_dict(torch.load(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
+    #     print("load relation network success")
 
     # Step 3: build graph
     print("Training...")
@@ -178,7 +178,7 @@ def main():
         # batch_dataloader is to batch samples for training
         task = tg.MiniImagenetTask(metatrain_folders,CLASS_NUM,SAMPLE_NUM_PER_CLASS,BATCH_NUM_PER_CLASS)
         sample_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False)
-        batch_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=BATCH_NUM_PER_CLASS,split="test",shuffle=False) #true
+        batch_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=BATCH_NUM_PER_CLASS,split="test",shuffle=True) #true
 
         # sample datas
         samples,sample_labels,supportNames = sample_dataloader.__iter__().next()
@@ -233,8 +233,8 @@ def main():
         if (episode+1)%100 == 0:
                 print("episode:",episode+1,"loss",loss.item())
 
-        if episode%5000 == 0:
-            if ORDERED:
+        if episode%100 == 0: #5000
+            if ORDERED and episode > 0:
                 print("Saving the order")
                 with open('pToDiff.pkl', 'wb') as out:
                     pickle.dump(pToDiff, out)
@@ -248,7 +248,7 @@ def main():
                 sample_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=1,split="train",shuffle=False)
 
                 num_per_class = 3
-                test_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=num_per_class,split="test",shuffle=False) #true
+                test_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=num_per_class,split="test",shuffle=True) #true
                 sample_images,sample_labels,_ = sample_dataloader.__iter__().next()
                 for test_images,test_labels, _ in test_dataloader:
                     batch_size = test_labels.shape[0]

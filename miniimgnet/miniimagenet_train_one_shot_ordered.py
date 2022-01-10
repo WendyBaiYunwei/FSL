@@ -29,7 +29,7 @@ parser.add_argument("-r","--relation_dim",type = int, default = 8)
 parser.add_argument("-w","--class_num",type = int, default = 5)
 parser.add_argument("-s","--sample_num_per_class",type = int, default = 1)
 parser.add_argument("-b","--batch_num_per_class",type = int, default = 1)
-parser.add_argument("-e","--episode",type = int, default= 6000) #500000
+parser.add_argument("-e","--episode",type = int, default= 16400) #500000
 parser.add_argument("-t","--test_episode", type = int, default = 600)
 parser.add_argument("-l","--learning_rate", type = float, default = 0.001)
 parser.add_argument("-g","--gpu",type=int, default=0)
@@ -149,31 +149,29 @@ def main():
     relation_network_optim = torch.optim.Adam(relation_network.parameters(),lr=LEARNING_RATE)
     relation_network_scheduler = StepLR(relation_network_optim,step_size=100000,gamma=0.5)
 
-    if os.path.exists(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
-        feature_encoder.load_state_dict(torch.load(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-        print("load feature encoder success")
-    if os.path.exists(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
-        relation_network.load_state_dict(torch.load(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-        print("load relation network success")
+    # if os.path.exists(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
+    #     feature_encoder.load_state_dict(torch.load(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
+    #     print("load feature encoder success")
+    # if os.path.exists(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
+    #     relation_network.load_state_dict(torch.load(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
+    #     print("load relation network success")
 
     # Step 3: build graph
     print("Training...")
 
     last_accuracy = 0.0
-
+    
+    # init dataset
+    # sample_dataloader is to obtain previous samples for compare
+    # batch_dataloader is to batch samples for training
+    normalize = transforms.Normalize(mean=[0.92206, 0.92206, 0.92206], std=[0.08426, 0.08426, 0.08426])
+    trans = transforms.Compose([transforms.ToTensor(),normalize])
+    ods = otg.OrderedTG(trans)
+    dataloader = torch.utils.data.DataLoader(ods)    
+    
     for episode in range(EPISODE):
-
         feature_encoder_scheduler.step(episode)
         relation_network_scheduler.step(episode)
-
-        # init dataset
-        # sample_dataloader is to obtain previous samples for compare
-        # batch_dataloader is to batch samples for training
-        normalize = transforms.Normalize(mean=[0.92206, 0.92206, 0.92206], std=[0.08426, 0.08426, 0.08426])
-        trans = transforms.Compose([transforms.ToTensor(),normalize])
-        ods = otg.OrderedTG(trans)
-        dataloader = torch.utils.data.DataLoader(ods)              
-
         # sample datas
         batches,batch_labels,samples = dataloader.__iter__().next()
 
@@ -215,7 +213,7 @@ def main():
         if (episode+1)%100 == 0:
                 print("episode:",episode+1,"loss",loss.item())
 
-        if episode%5000 == 0:
+        if episode%100 == 0:
             # test
             print("Testing...")
             accuracies = []
@@ -226,7 +224,7 @@ def main():
                 sample_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=1,split="train",shuffle=False)
 
                 num_per_class = 3
-                test_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=num_per_class,split="test",shuffle=False) #true
+                test_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=num_per_class,split="test",shuffle=True) #true
                 sample_images,sample_labels, _ = sample_dataloader.__iter__().next()
                 for test_images,test_labels, _ in test_dataloader:
                     batch_size = test_labels.shape[0]
@@ -257,11 +255,11 @@ def main():
             print("test accuracy:",test_accuracy,"h:",h)
 
             if test_accuracy > last_accuracy:
-                # save networks
-                torch.save(feature_encoder.state_dict(),str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
-                torch.save(relation_network.state_dict(),str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+                # # save networks
+                # torch.save(feature_encoder.state_dict(),str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+                # torch.save(relation_network.state_dict(),str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
 
-                print("save networks for episode:",episode)
+                # print("save networks for episode:",episode)
 
                 last_accuracy = test_accuracy
 
