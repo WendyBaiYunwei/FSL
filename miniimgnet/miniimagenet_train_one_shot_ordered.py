@@ -213,7 +213,7 @@ def main():
         relation_network_optim.step()
 
         if (episode+1)%100 == 0:
-                print("episode:",episode+1,"loss",loss.data[0])
+                print("episode:",episode+1,"loss",loss.item())
 
         if episode%5000 == 0:
             # test
@@ -222,7 +222,7 @@ def main():
             for i in range(TEST_EPISODE):
                 total_rewards = 0
                 counter = 0
-                task = tg.MiniImagenetTask(metatest_folders,CLASS_NUM,1,15) #### will this change?
+                task = tg.MiniImagenetTask(metatest_folders,CLASS_NUM,1,15)
                 sample_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=1,split="train",shuffle=False)
 
                 num_per_class = 3

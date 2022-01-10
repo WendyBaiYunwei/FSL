@@ -26,9 +26,6 @@ class OrderedTG(Dataset):
         queryX = io.imread(os.path.abspath(self.queryPaths[index]))
         queryX = self.transform(queryX)
         queryY = self.queryYs[index]
-        # print(self.queryYs) ####all zeros, check
-        # print(queryY)
-        # exit()
         supportXs = []
         supportPaths = self.allSupportPaths[index][2:-2].split('\', \'')
         for supportX in supportPaths:

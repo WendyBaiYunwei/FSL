@@ -183,7 +183,8 @@ def main():
         # sample datas
         samples,sample_labels,supportNames = sample_dataloader.__iter__().next()
         batches,batch_labels,batchQueryNames = batch_dataloader.__iter__().next()
-
+        # print(batch_labels)
+        
         # calculate features
         sample_features = feature_encoder(Variable(samples).cuda(GPU)) # 5x64*5*5
         batch_features = feature_encoder(Variable(batches).cuda(GPU)) # 20x64*5*5
@@ -204,7 +205,7 @@ def main():
         # get k
         if ORDERED:
             with torch.no_grad():
-                for i in range(BATCH_NUM_PER_CLASS):
+                for i in range(BATCH_NUM_PER_CLASS * CLASS_NUM):
                     correctClass = batch_labels.clone()[i].item()
                     correctClassI = -1
                     for c in range(CLASS_NUM):
@@ -213,6 +214,7 @@ def main():
                     k = getK(relations.clone()[i], correctClassI)
                     query = batchQueryNames[i]
                     queryY = batch_labels.clone()[i].item()
+                    # print(i, queryY)
                     support = str(supportNames)
                     pToDiff[(str(query), str(queryY), support)] = k
 
