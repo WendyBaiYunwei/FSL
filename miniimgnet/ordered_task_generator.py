@@ -23,7 +23,10 @@ class OrderedTG(Dataset):
         # ttlLen = len(self.pairs)
         # pairs = sorted(self.pairs[:ttlLen//3*2], key = lambda x : x[3], reverse=True) ##true sort
         pairs = sorted(self.pairs, key = lambda x : x[3], reverse=True) ##true sort
+        print(pairs[0])
+        print(pairs[-1])
         # pairs.extend(self.pairs[ttlLen//3*2:])
+        # pairs = self.pairs
         self.batches = []
 
         for i in range(0, len(pairs), 5):

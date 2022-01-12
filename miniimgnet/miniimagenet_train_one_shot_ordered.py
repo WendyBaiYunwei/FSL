@@ -254,14 +254,14 @@ def main():
 
             print("test accuracy:",test_accuracy,"h:",h)
 
-            if test_accuracy > last_accuracy:
+            # if test_accuracy > last_accuracy:
                 # # save networks
                 # torch.save(feature_encoder.state_dict(),str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
                 # torch.save(relation_network.state_dict(),str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
 
                 # print("save networks for episode:",episode)
 
-                last_accuracy = test_accuracy
+                # last_accuracy = test_accuracy
 
 
 if __name__ == '__main__':
