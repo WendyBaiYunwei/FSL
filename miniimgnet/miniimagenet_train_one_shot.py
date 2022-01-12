@@ -28,12 +28,12 @@ parser.add_argument("-r","--relation_dim",type = int, default = 8)
 parser.add_argument("-w","--class_num",type = int, default = 5)
 parser.add_argument("-s","--sample_num_per_class",type = int, default = 1)
 parser.add_argument("-b","--batch_num_per_class",type = int, default = 1)
-parser.add_argument("-e","--episode",type = int, default= 500000) #500000
+parser.add_argument("-e","--episode",type = int, default= 500) #500000 ####
 parser.add_argument("-t","--test_episode", type = int, default = 600)
 parser.add_argument("-l","--learning_rate", type = float, default = 0.001)
 parser.add_argument("-g","--gpu",type=int, default=0)
 parser.add_argument("-u","--hidden_unit",type=int,default=10)
-parser.add_argument("-o","--ordered",type=bool,default=False)
+parser.add_argument("-o","--ordered",type=bool,default=True) ####
 args = parser.parse_args()
 
 # Hyper Parameters
@@ -156,12 +156,12 @@ def main():
     relation_network_optim = torch.optim.Adam(relation_network.parameters(),lr=LEARNING_RATE)
     relation_network_scheduler = StepLR(relation_network_optim,step_size=100000,gamma=0.5)
 
-    # if os.path.exists(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
-    #     feature_encoder.load_state_dict(torch.load(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-    #     print("load feature encoder success")
-    # if os.path.exists(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
-    #     relation_network.load_state_dict(torch.load(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-    #     print("load relation network success")
+    if os.path.exists(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
+        feature_encoder.load_state_dict(torch.load(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
+        print("load feature encoder success")
+    if os.path.exists(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
+        relation_network.load_state_dict(torch.load(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
+        print("load relation network success")
 
     # Step 3: build graph
     print("Training...")
@@ -183,7 +183,6 @@ def main():
         # sample datas
         samples,sample_labels,supportNames = sample_dataloader.__iter__().next()
         batches,batch_labels,batchQueryNames = batch_dataloader.__iter__().next()
-        # print(batch_labels)
         
         # calculate features
         sample_features = feature_encoder(Variable(samples).cuda(GPU)) # 5x64*5*5
@@ -203,20 +202,16 @@ def main():
         loss = mse(relations,one_hot_labels)
 
         # get k
+        # exit()
         if ORDERED:
             with torch.no_grad():
-                for i in range(BATCH_NUM_PER_CLASS * CLASS_NUM):
-                    correctClass = batch_labels.clone()[i].item()
-                    correctClassI = -1
-                    for c in range(CLASS_NUM):
-                        if sample_labels.clone()[c] == correctClass:
-                            correctClassI = c
-                    k = getK(relations.clone()[i], correctClassI)
-                    query = batchQueryNames[i]
-                    queryY = batch_labels.clone()[i].item()
-                    # print(i, queryY)
-                    support = str(supportNames)
-                    pToDiff[(str(query), str(queryY), support)] = k
+                # correctClass = batch_labels.clone()[i].item()
+                # correctClassI = -1
+                # for c in range(CLASS_NUM):
+                #     if sample_labels.clone()[c] == correctClass:
+                #         correctClassI = c
+                # k = getK(relations.clone()[i], correctClassI)
+                pToDiff[(str(batchQueryNames), str(batch_labels), str(supportNames))] = loss
 
         # training
         feature_encoder.zero_grad()

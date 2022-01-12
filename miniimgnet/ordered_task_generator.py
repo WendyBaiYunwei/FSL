@@ -16,24 +16,31 @@ class OrderedTG(Dataset):
         pairToK = dict(pairToK)
         self.queryPaths = []
         self.queryYs = []
-        self.allSupportPaths = []
-        for query, queryY, support in pairToK:
-            self.queryPaths.append(query)
-            self.queryYs.append(queryY)
-            self.allSupportPaths.append(support)
+        self.supportPaths = []
+        for querys, queryYs, support in pairToK:
+            querys = querys[2:-2].split('\', \'')
+            self.queryPaths.append(querys)
+            queryYs = queryYs[8:-2].split(', ')
+            self.queryYs.append(queryYs)
+            support = support[2:-2].split('\', \'')
+            self.supportPaths.append(support)
         self.transform = transform
 
     def __getitem__(self, index):
-        queryX = io.imread(os.path.abspath(self.queryPaths[index]))
-        queryX = self.transform(queryX)
-        queryY = self.queryYs[index]
+        queryXs = []
+        queryYs = []
         supportXs = []
-        supportPaths = self.allSupportPaths[index][2:-2].split('\', \'')
-        for supportX in supportPaths:
-            supportX = io.imread(os.path.abspath(supportX))
+        for i in range(5): # change if change batch size
+            queryX = io.imread(os.path.abspath(self.queryPaths[index][i]))
+            queryX = self.transform(queryX)
+            queryXs.append(queryX.numpy())
+            queryY = self.queryYs[index][i]
+            queryYs.append(int(queryY))
+            supportX = io.imread(os.path.abspath(self.supportPaths[index][i]))
             supportX = self.transform(supportX)
             supportXs.append(supportX.numpy())
-        return queryX, queryY, torch.FloatTensor(supportXs)
+        return torch.FloatTensor(queryXs), torch.LongTensor(queryYs), torch.FloatTensor(supportXs)
+        # return self.queryPaths[index], self.queryYs[index], self.supportPaths[index]
 
     def __len__(self):
         return len(self.queryPaths)
