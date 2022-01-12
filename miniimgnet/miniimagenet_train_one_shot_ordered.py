@@ -29,7 +29,7 @@ parser.add_argument("-r","--relation_dim",type = int, default = 8)
 parser.add_argument("-w","--class_num",type = int, default = 5)
 parser.add_argument("-s","--sample_num_per_class",type = int, default = 1)
 parser.add_argument("-b","--batch_num_per_class",type = int, default = 1)
-parser.add_argument("-e","--episode",type = int, default= 400) #500000
+parser.add_argument("-e","--episode",type = int, default= 800) #500000
 parser.add_argument("-t","--test_episode", type = int, default = 600)
 parser.add_argument("-l","--learning_rate", type = float, default = 0.001)
 parser.add_argument("-g","--gpu",type=int, default=0)
@@ -213,7 +213,7 @@ def main():
         if (episode+1)%100 == 0:
                 print("episode:",episode+1,"loss",loss.item())
 
-        if episode%100 == 0:
+        if episode%50 == 0:
             # test
             print("Testing...")
             accuracies = []
