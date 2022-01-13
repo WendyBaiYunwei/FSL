@@ -22,38 +22,20 @@ class OrderedTG(Dataset):
                 self.pairs.append(e)
         # ttlLen = len(self.pairs)
         # pairs = sorted(self.pairs[:ttlLen//3*2], key = lambda x : x[3], reverse=True) ##true sort
-        pairs = sorted(self.pairs, key = lambda x : x[3], reverse=True) ##true sort
-        print(pairs[0])
-        print(pairs[-1])
-        # pairs.extend(self.pairs[ttlLen//3*2:])
-        # pairs = self.pairs
-        self.batches = []
-
-        for i in range(0, len(pairs), 5):
-            queryXs = []
-            queryYs = []
-            for queryX, queryY, _, _ in list(pairs[i : i+5]):
-                queryXs.append(queryX)
-                queryYs.append(queryY)
-            l = [queryXs, queryYs, pairs[i][2]]
-            self.batches.append(l)
-
+        # self.pairs = sorted(self.pairs, key = lambda x : x[3], reverse=True) ##true sort
         self.transform = transform
 
     def __getitem__(self, index):
-        queryXs = []
-        queryYs = []
+        queryX = io.imread(os.path.abspath(self.pairs[index][0]))
+        queryX = self.transform(queryX)
+        queryY = self.pairs[index][1]
         supportXs = []
         for i in range(5): # change if change batch size
-            queryX = io.imread(os.path.abspath(self.batches[index][0][i]))
-            queryX = self.transform(queryX)
-            queryXs.append(queryX.numpy())
-            queryY = self.batches[index][1][i]
-            queryYs.append(int(queryY))
-            supportX = io.imread(os.path.abspath(self.batches[index][2][i]))
+            supportX = io.imread(os.path.abspath(self.pairs[index][2][i]))
             supportX = self.transform(supportX)
             supportXs.append(supportX.numpy())
-        return torch.FloatTensor(queryXs), torch.LongTensor(queryYs), torch.FloatTensor(supportXs)
+        supportXs = np.array(supportXs)
+        return queryX, queryY, torch.from_numpy(supportXs)
 
     def __len__(self):
-        return len(self.batches)
+        return len(self.pairs)
