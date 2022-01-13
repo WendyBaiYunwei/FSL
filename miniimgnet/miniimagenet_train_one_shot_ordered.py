@@ -29,9 +29,9 @@ parser.add_argument("-r","--relation_dim",type = int, default = 8)
 parser.add_argument("-w","--class_num",type = int, default = 5)
 parser.add_argument("-s","--sample_num_per_class",type = int, default = 1)
 parser.add_argument("-b","--batch_num_per_class",type = int, default = 1)
-parser.add_argument("-e","--episode",type = int, default= 800*5) #500000
+parser.add_argument("-e","--episode",type = int, default= 800) #500000
 parser.add_argument("-t","--test_episode", type = int, default = 600)
-parser.add_argument("-l","--learning_rate", type = float, default = 1e-4) #1e-3
+parser.add_argument("-l","--learning_rate", type = float, default = 1e-3) #1e-3
 parser.add_argument("-g","--gpu",type=int, default=0)
 parser.add_argument("-u","--hidden_unit",type=int,default=10)
 args = parser.parse_args()
@@ -176,11 +176,9 @@ def main():
         # sample datas
         batches,batch_labels,samples = next(dataloader)
 
-        # print(samples.shape)
-        # print(batches.shape)
         # calculate features
         sample_features = feature_encoder(Variable(samples.squeeze()).cuda(GPU)) # 5 x img_dim
-        batch_features = feature_encoder(Variable(batches).cuda(GPU)) # 1 x img_dim
+        batch_features = feature_encoder(Variable(batches.squeeze()).cuda(GPU)) # 1 x img_dim
 
         # print(sample_features.shape)
         # print(batch_features.shape)
@@ -188,17 +186,14 @@ def main():
         # calculate relations
         # each batch sample link to every samples to calculate relations
         # to form a 100x128 matrix for relation network
-        sample_features_ext = sample_features.unsqueeze(0) #support
-        batch_features_ext = batch_features.unsqueeze(0).repeat(CLASS_NUM,1,1,1,1) #query
+        sample_features_ext = sample_features.unsqueeze(0).repeat(BATCH_NUM_PER_CLASS*CLASS_NUM,1,1,1,1) #support
+        batch_features_ext = batch_features.unsqueeze(0).repeat(SAMPLE_NUM_PER_CLASS*CLASS_NUM,1,1,1,1) #query
         batch_features_ext = torch.transpose(batch_features_ext,0,1)
         relation_pairs = torch.cat((sample_features_ext,batch_features_ext),2).view(-1,FEATURE_DIM*2,19,19)
-        relations = relation_network(relation_pairs).view(5,1)
+        relations = relation_network(relation_pairs).view(-1,CLASS_NUM*SAMPLE_NUM_PER_CLASS)
 
         mse = nn.MSELoss().cuda(GPU)
-        one_hot_labels = torch.zeros(5, 1)
-        # print(batch_labels)
-        one_hot_labels[batch_labels.item()] = 1
-        one_hot_labels = Variable(one_hot_labels).cuda(GPU)
+        one_hot_labels = Variable(torch.zeros(BATCH_NUM_PER_CLASS*CLASS_NUM, CLASS_NUM).scatter_(1, batch_labels.view(-1,1), 1)).cuda(GPU)
         loss = mse(relations,one_hot_labels)
 
         # training
