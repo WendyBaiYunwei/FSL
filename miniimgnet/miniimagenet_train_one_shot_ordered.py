@@ -31,7 +31,7 @@ parser.add_argument("-s","--sample_num_per_class",type = int, default = 1)
 parser.add_argument("-b","--batch_num_per_class",type = int, default = 1)
 parser.add_argument("-e","--episode",type = int, default= 800*5) #500000
 parser.add_argument("-t","--test_episode", type = int, default = 600)
-parser.add_argument("-l","--learning_rate", type = float, default = 0.001)
+parser.add_argument("-l","--learning_rate", type = float, default = 1e-4) #1e-3
 parser.add_argument("-g","--gpu",type=int, default=0)
 parser.add_argument("-u","--hidden_unit",type=int,default=10)
 args = parser.parse_args()

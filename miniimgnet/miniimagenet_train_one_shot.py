@@ -203,16 +203,16 @@ def main():
         # exit()
         if ORDERED:
             with torch.no_grad():
-                ks = []
-                for i in range(5):
-                    correctClass = batch_labels.clone()[i].item()
-                    correctClassI = -1
-                    for c in range(5):
-                        if sample_labels.clone()[c] == correctClass:
-                            correctClassI = c
-                    k = getK(relations.clone()[i], correctClassI)
-                    ks.append(k)
-                pToDiff[(str(batchQueryNames), str(batch_labels), str(supportNames))] = ks
+                # ks = []
+                # for i in range(5):
+                #     correctClass = batch_labels.clone()[i].item()
+                #     correctClassI = -1
+                #     for c in range(5):
+                #         if sample_labels.clone()[c] == correctClass:
+                #             correctClassI = c
+                #     k = getK(relations.clone()[i], correctClassI)
+                #     ks.append(k)
+                pToDiff[(str(batchQueryNames), str(batch_labels), str(supportNames))] = loss
 
         # training
         feature_encoder.zero_grad()
