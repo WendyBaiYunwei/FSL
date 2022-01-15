@@ -28,12 +28,12 @@ parser.add_argument("-r","--relation_dim",type = int, default = 8)
 parser.add_argument("-w","--class_num",type = int, default = 5)
 parser.add_argument("-s","--sample_num_per_class",type = int, default = 1)
 parser.add_argument("-b","--batch_num_per_class",type = int, default = 1)
-parser.add_argument("-e","--episode",type = int, default= 800) #500000 ####
+parser.add_argument("-e","--episode",type = int, default= 2000) #500000 ####
 parser.add_argument("-t","--test_episode", type = int, default = 600)
-parser.add_argument("-l","--learning_rate", type = float, default = 0.001)
+parser.add_argument("-l","--learning_rate", type = float, default = 0.0005)
 parser.add_argument("-g","--gpu",type=int, default=0)
 parser.add_argument("-u","--hidden_unit",type=int,default=10)
-parser.add_argument("-o","--ordered",type=bool,default=True) ####
+parser.add_argument("-o","--ordered",type=bool,default=True)
 args = parser.parse_args()
 
 # Hyper Parameters
@@ -128,8 +128,10 @@ def weights_init(m):
         m.bias.data = torch.ones(m.bias.data.size())
 
 def getK(relationScores, correctClass):
-    correctClassScore = relationScores[correctClass]
-    return correctClassScore
+    correctClassScore = relationScores[correctClass].item()
+    relationScores[correctClass] = -1
+    confusingScore = torch.max(relationScores)
+    return correctClassScore - confusingScore #the higher, the easier
 
 def main():
     # Step 1: init data folders
@@ -203,16 +205,14 @@ def main():
         # exit()
         if ORDERED:
             with torch.no_grad():
-                # ks = []
-                # for i in range(5):
-                #     correctClass = batch_labels.clone()[i].item()
-                #     correctClassI = -1
-                #     for c in range(5):
-                #         if sample_labels.clone()[c] == correctClass:
-                #             correctClassI = c
-                #     k = getK(relations.clone()[i], correctClassI)
-                #     ks.append(k)
-                pToDiff[(str(batchQueryNames), str(batch_labels), str(supportNames))] = loss
+                ks = []
+                for i in range(5):
+                    correctClass = batch_labels.clone()[i].item()
+                    k = getK(relations.clone()[i], correctClass)
+                    ks.append(k)
+                
+                m = torch.mean(torch.stack(ks))
+                pToDiff[(str(batchQueryNames), str(batch_labels), str(supportNames))] = m
 
         # training
         feature_encoder.zero_grad()
@@ -229,7 +229,7 @@ def main():
         if (episode+1)%100 == 0:
                 print("episode:",episode+1,"loss",loss.item())
 
-        if episode%50 == 0: #5000
+        if episode%(EPISODE - 1) == 0: #5000
             if ORDERED and episode > 0:
                 print("Saving the order")
                 with open('pToDiff.pkl', 'wb') as out:
@@ -274,15 +274,15 @@ def main():
 
             print("test accuracy:",test_accuracy,"h:",h)
 
-            # if test_accuracy > last_accuracy:
+            if test_accuracy > last_accuracy:
 
-            #     # save networks
-            #     torch.save(feature_encoder.state_dict(),str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
-            #     torch.save(relation_network.state_dict(),str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+                # save networks
+                torch.save(feature_encoder.state_dict(),str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+                torch.save(relation_network.state_dict(),str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
 
-            #     print("save networks for episode:",episode)
+                print("save networks for episode:",episode)
 
-            #     last_accuracy = test_accuracy
+                last_accuracy = test_accuracy
 
 
 if __name__ == '__main__':

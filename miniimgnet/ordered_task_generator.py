@@ -9,7 +9,7 @@ import pickle
 class OrderedTG(Dataset):
     def __init__(self, transform):
         dbfile = open('pToDiff.pkl', 'rb')     
-        self.pairToK = pickle.load(dbfile)
+        pairToK = pickle.load(dbfile)
         dbfile.close()
         # self.pairs = []
         # for querys, queryYs, support in pairToK:
@@ -20,13 +20,13 @@ class OrderedTG(Dataset):
         #     for i in range(len(querysL)):
         #         e = [querysL[i], int(queryYsL[i]), supportL, loss[i]]
         #         self.pairs.append(e)
-        ttlLen = len(self.pairToK)
+        # ttlLen = len(pairToK)
         # self.pairs = sorted(self.pairs[:ttlLen//3*2], key = lambda x : x[3], reverse=True) ##true sort
-        # self.pairs = sorted(self.pairs, key = lambda x : x[3], reverse=True) ##true sort
+        # self.pairToK = sorted(pairToK.items(), key = lambda x : x[1], reverse=True) ##true sort
         # l = list(self.pairToK.items())
         # self.pairToK = sorted(l[:ttlLen//3*1], key = lambda x : x[1])
         # self.pairToK.extend(l[ttlLen//3*2:])
-        self.pairToK = list(self.pairToK.items())
+        self.pairToK = list(pairToK.items())
         self.transform = transform
 
     def __getitem__(self, index):
