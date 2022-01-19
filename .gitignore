@@ -136,3 +136,4 @@ cifar/cifar-data/
 *.log
 pretrained_teacher_models/
 *.zip
+*.png
