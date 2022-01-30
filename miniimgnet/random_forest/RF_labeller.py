@@ -3,6 +3,7 @@
 
 from sklearn.ensemble import RandomForestClassifier
 from skimage import io
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
@@ -11,7 +12,6 @@ import numpy as np
 import task_generator as tg
 import os
 import random
-import pandas as pd
 from sklearn.metrics import accuracy_score
 
 
@@ -34,8 +34,8 @@ class MiniImgnet():
 
             return train_roots, train_labels
 
-        TRAIN_SIZE = 15000
-        TEST_SIZE = 800
+        TRAIN_SIZE = 1000
+        TEST_SIZE = 300
 
         train_roots, train_labels = get_raw_x_y(metatrain_folders, TRAIN_SIZE)
         test_roots, test_labels = get_raw_x_y(metatest_folders, TEST_SIZE)
@@ -50,12 +50,13 @@ class MiniImgnet():
         xs = []
         ys = []
         for index in range(len(x)):
-            x_path = os.path.abspath('./' + self.train_roots[index])
-            x = io.imread(x_path)
-            x = self.transform(x)
-            y = int(self.train_labels[index])
-            xs.append(x)
-            ys.append(y)
+            x_path = os.path.abspath('./' + x[index])
+            input = io.imread(x_path)
+            input = np.swapaxes(input, 0, 2)
+            input = np.swapaxes(input, 1, 2)
+            label = int(y[index])
+            xs.append(input)
+            ys.append(label)
         return np.stack(xs), np.stack(ys)
 
 class CNNEncoder(nn.Module):
@@ -82,7 +83,8 @@ class CNNEncoder(nn.Module):
                         nn.ReLU())
 
     def forward(self,x):
-        out = self.layer1(x)
+        x = torch.tensor(x, dtype=float)
+        out = self.layer1(x.float())
         out = self.layer2(out)
         out = self.layer3(out)
         out = self.layer4(out)
@@ -99,11 +101,11 @@ class RF_Labeller():
         self.y_test = y_test
 
     def train(self):
-        x = self.encoder(self.x)
+        x = self.encoder(self.x).detach().numpy()
         self.classifier.fit(x, self.y)
 
     def predict(self):
-        x = self.encoder(self.x_test)
+        x = self.encoder(self.x_test).detach().numpy()
         return self.classifier.predict(x)
 
     def eval(self):
@@ -113,6 +115,9 @@ class RF_Labeller():
 
 # test RFL
 dataset = MiniImgnet()
+print('done initing dataset')
 rfl = RF_Labeller(dataset.train_x, dataset.train_y, dataset.test_x, dataset.test_y)
+print('start training')
 rfl.train()
+print('start testing')
 rfl.eval()

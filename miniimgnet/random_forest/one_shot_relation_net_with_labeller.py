@@ -83,9 +83,9 @@ class CNNEncoder(nn.Module):
 
 class RelationNetwork(nn.Module):
     """docstring for RelationNetwork"""
-    def __init__(self,input_size,hidden_size, class_num):
+    def __init__(self,input_size,hidden_size, class_num): ####
         super(RelationNetwork, self).__init__()
-        self.label_emb = nn.Embedding(class_num, input_size*3*3) #one hot label to input size *3*3
+        # self.label_emb = nn.Embedding(1, 19 * 19) #one hot label to input size *3*3
         self.layer1 = nn.Sequential(
                         nn.Conv2d(128 + 1,64,kernel_size=3,padding=0),
                         nn.BatchNorm2d(64, momentum=1, affine=True),
@@ -100,7 +100,14 @@ class RelationNetwork(nn.Module):
         self.fc2 = nn.Linear(hidden_size,1)
 
     def forward(self,x,label):
-        l_embed = self.label_emb(label)
+        # print(x.shape) #25, 128, 19, 19
+        label = torch.flatten(label)
+        # l_embed = self.label_emb(torch.tensor(label, dtype=torch.long))
+        l_embed = torch.zeros(25, 1, 19, 19)
+        for i, is_one in enumerate(label):
+            if is_one:
+                l_embed[i, :, :, :] = torch.ones(1, 1, 19, 19)
+        l_embed = l_embed.cuda(GPU)
         xy = torch.cat([x, l_embed], dim = 1)
         out = self.layer1(xy)
         out = self.layer2(out)
@@ -180,7 +187,6 @@ def main():
         # sample datas
         samples,sample_labels,supportNames = sample_dataloader.__iter__().next()
         batches,batch_labels,batchQueryNames = batch_dataloader.__iter__().next()
-        
         # calculate features
         sample_features = feature_encoder(Variable(samples).cuda(GPU)) # 5x64*5*5
         batch_features = feature_encoder(Variable(batches).cuda(GPU)) # 20x64*5*5
@@ -236,7 +242,7 @@ def main():
             for i in range(TEST_EPISODE):
                 total_rewards = 0
                 counter = 0
-                task = tg.MiniImagenetTask(metatest_folders,CLASS_NUM,1,15)
+                task = tg.MiniImagenetTask(metatest_folders,CLASS_NUM,1,5)
                 sample_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=1,split="train",shuffle=False)
 
                 num_per_class = 3
