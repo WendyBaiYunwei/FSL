@@ -27,37 +27,38 @@ class MiniImgnet():
                 temp = [os.path.join(c, x) for x in os.listdir(c)]
                 self.train_roots.extend(temp)
 
+            random.seed(0)
             random.shuffle(self.train_roots)
 
             train_roots = self.train_roots[:size]
-            train_labels = [labels[self.get_class(x)] for x in self.train_roots]
+            train_labels = [labels[self.get_class(x)] for x in train_roots]
 
             return train_roots, train_labels
 
-        TRAIN_SIZE = 1000
-        TEST_SIZE = 300
+        def transform(x, y):
+            xs = []
+            ys = []
+            for index in range(len(x)):
+                x_path = os.path.abspath('./' + x[index])
+                input = io.imread(x_path)
+                input = np.swapaxes(input, 0, 2)
+                input = np.swapaxes(input, 1, 2)
+                label = int(y[index])
+                xs.append(input)
+                ys.append(label)
+            return np.stack(xs), np.stack(ys)
+
+        TRAIN_SIZE = 3500
+        TEST_SIZE = 150
 
         train_roots, train_labels = get_raw_x_y(metatrain_folders, TRAIN_SIZE)
         test_roots, test_labels = get_raw_x_y(metatest_folders, TEST_SIZE)
 
-        self.train_x, self.train_y = self.transform(train_roots, train_labels)
-        self.test_x, self.test_y = self.transform(test_roots, test_labels)
+        self.train_x, self.train_y = transform(train_roots, train_labels)
+        self.test_x, self.test_y = transform(test_roots, test_labels)
 
     def get_class(self, sample):
         return os.path.join(*sample.split('/')[:-1])
-
-    def transform(self, x, y):
-        xs = []
-        ys = []
-        for index in range(len(x)):
-            x_path = os.path.abspath('./' + x[index])
-            input = io.imread(x_path)
-            input = np.swapaxes(input, 0, 2)
-            input = np.swapaxes(input, 1, 2)
-            label = int(y[index])
-            xs.append(input)
-            ys.append(label)
-        return np.stack(xs), np.stack(ys)
 
 class CNNEncoder(nn.Module):
     """docstring for ClassName"""
@@ -94,7 +95,7 @@ class CNNEncoder(nn.Module):
 class RF_Labeller():
     def __init__(self, data_x, data_y, x_test, y_test):
         self.encoder = CNNEncoder()
-        self.classifier = RandomForestClassifier(n_estimators = 20, random_state = 42, max_features=4)
+        self.classifier = RandomForestClassifier(n_estimators = 5, random_state = 42, max_features=5)
         self.x = data_x
         self.y = data_y
         self.x_test = x_test
