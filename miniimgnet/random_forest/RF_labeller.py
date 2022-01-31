@@ -48,8 +48,8 @@ class MiniImgnet():
                 ys.append(label)
             return np.stack(xs), np.stack(ys)
 
-        TRAIN_SIZE = 3500
-        TEST_SIZE = 150
+        TRAIN_SIZE =3600
+        TEST_SIZE = 50
 
         train_roots, train_labels = get_raw_x_y(metatrain_folders, TRAIN_SIZE)
         test_roots, test_labels = get_raw_x_y(metatest_folders, TEST_SIZE)
@@ -95,7 +95,7 @@ class CNNEncoder(nn.Module):
 class RF_Labeller():
     def __init__(self, data_x, data_y, x_test, y_test):
         self.encoder = CNNEncoder()
-        self.classifier = RandomForestClassifier(n_estimators = 5, random_state = 42, max_features=5)
+        self.classifier = RandomForestClassifier(n_estimators = 12, random_state = 42, max_features=4)
         self.x = data_x
         self.y = data_y
         self.x_test = x_test
