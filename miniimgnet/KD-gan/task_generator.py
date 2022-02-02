@@ -26,7 +26,7 @@ class Rotate(object):
 
 def mini_imagenet_folders():
     train_folder = './train'
-    test_folder = './val'
+    test_folder = './test'
 
     metatrain_folders = [os.path.join(train_folder, label) \
                 for label in os.listdir(train_folder) \
