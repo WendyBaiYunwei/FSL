@@ -63,7 +63,7 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
 
         self.model = nn.Sequential(
-            nn.Linear(int(np.prod(img_shape)) + CLASS_NUM, 512),
+            nn.Linear(int(np.prod(img_shape)), 512),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Linear(512, 256),
             nn.LeakyReLU(0.2, inplace=True),
@@ -71,8 +71,8 @@ class Discriminator(nn.Module):
             nn.Sigmoid(),
         )
 
-    def forward(self, img, labels):
-        img_flat = torch.cat([img.view(img.size(0), -1), labels], dim = 1)
+    def forward(self, img):
+        img_flat = img.view(img.size(0), -1)
         validity = self.model(img_flat)
 
         return validity
