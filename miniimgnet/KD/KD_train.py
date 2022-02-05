@@ -1,15 +1,5 @@
 # relation net knowledge distillation
-# teacher + classifier
-# student + classifier
-# relation score backprop and update the students
-
-# to-do:
-# skeleton -> details
-# init, train, test
-# tune hyper parameters
-from dataset import get_loader, get_loader_sm
-from encoder_distil.miniimgnet.miniimagenet_train_one_shot import CNNEncoder
-from torchvision import datasets, models
+from torchvision import models
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -81,7 +71,7 @@ class CNNstudent(nn.Module):
         
 torch.manual_seed(0)
 LEARNING_RATE = 0.0005
-EXPERIMENT_NAME = 'TEST'
+EXPERIMENT_NAME = 'TEST.txt'
 EPISODE = 1
 CLASS_NUM = 5
 SAMPLE_NUM_PER_CLASS = 1
@@ -230,8 +220,7 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
 
             print("test accuracy:",test_accuracy,"h:",h)
 
-            if test_accuracy > last_accuracy:
-
+            if test_accuracy > last_accuracy
                 # save networks
                 test_res = 'acc: ' + str(test_accuracy) + 'episode: ' + str(episode)
                 if encOpt:
@@ -248,7 +237,6 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
 
 if __name__ == '__main__': # load existing model
     logging.basicConfig(filename=EXPERIMENT_NAME, level=logging.INFO)
-    trainloader = get_loader('train')
     teacherEnc = models.vgg16(pretrained=True).features
     for param in teacherEnc.params():
         param.require_gradient = False
@@ -259,7 +247,7 @@ if __name__ == '__main__': # load existing model
     for param in teacherClassifier.params():
         param.require_gradient = False
 
-    stuEnc = CNNEncoder()
+    stuEnc = CNNstudent()
     stuClassifier = RelationNetwork()
     stuEnc.apply(weights_init)
     stuClassifier.apply(weights_init)
