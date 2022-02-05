@@ -8,11 +8,13 @@ import task_generator as tg
 from torch.autograd import Variable
 import numpy as np
 import scipy as sp
+import scipy.stats
+import math
 
 
 class RelationNetwork(nn.Module):
     """docstring for RelationNetwork"""
-    def __init__(self,input_size,hidden_size):
+    def __init__(self,input_size,hidden_size=8):
         super(RelationNetwork, self).__init__()
         self.layer1 = nn.Sequential(
                         nn.Conv2d(128,64,kernel_size=3,padding=0),
@@ -25,6 +27,30 @@ class RelationNetwork(nn.Module):
                         nn.ReLU(),
                         nn.MaxPool2d(2))
         self.fc1 = nn.Linear(input_size*3*3,hidden_size)
+        self.fc2 = nn.Linear(hidden_size,1)
+
+    def forward(self,x):
+        out = self.layer1(x)
+        out = self.layer2(out)
+        out = out.view(out.size(0),-1)
+        out = F.relu(self.fc1(out))
+        out = F.sigmoid(self.fc2(out))
+        return out
+
+class TeacherRelationNetwork(nn.Module):
+    """docstring for RelationNetwork"""
+    def __init__(self,hidden_size=8):
+        super(TeacherRelationNetwork, self).__init__()
+        self.layer1 = nn.Sequential(
+                        nn.Conv2d(1024,512,kernel_size=1,padding=0),
+                        nn.BatchNorm2d(512, momentum=1, affine=True),
+                        nn.ReLU())
+        self.layer2 = nn.Sequential(
+                        nn.Conv2d(512,64,kernel_size=1,padding=0),
+                        nn.BatchNorm2d(64, momentum=1, affine=True),
+                        nn.ReLU(),
+                        nn.MaxPool2d(2))
+        self.fc1 = nn.Linear(64*3*3,hidden_size)
         self.fc2 = nn.Linear(hidden_size,1)
 
     def forward(self,x):
@@ -70,20 +96,17 @@ class CNNstudent(nn.Module):
         return x, y
         
 torch.manual_seed(0)
-LEARNING_RATE = 0.0005
+LEARNING_RATE = 0.001
 EXPERIMENT_NAME = 'TEST.txt'
-EPISODE = 1
+EPISODE = 1000
 CLASS_NUM = 5
 SAMPLE_NUM_PER_CLASS = 1
 BATCH_NUM_PER_CLASS = 15
 teacher_dim = {'channel': 512, 'dim': 7}
 stu_dim = {'channel': 64, 'dim': 19}
-FEATURE_DIM = 64
 TEST_EPISODE = 600
 T = 20
 alpha = 0.9
-
-torch.manual_seed(0)
 
 def weights_init(m):
     classname = m.__class__.__name__
@@ -103,7 +126,7 @@ def weights_init(m):
 def mean_confidence_interval(data, confidence=0.95):
     a = 1.0*np.array(data)
     n = len(a)
-    m, se = np.mean(a), sp.stats.sem(a)
+    m, se = np.mean(a), scipy.stats.sem(a)
     h = se * sp.stats.t._ppf((1+confidence)/2., n-1)
     return m,h
 
@@ -115,6 +138,7 @@ def loss_fn_kd(outputs, labels, teacher_outputs):
     return KD_loss
 
 def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = None, teacher_classifier = None):
+    last_accuracy = 0.0
     for episode in range(EPISODE):
         metatrain_folders,metatest_folders = tg.mini_imagenet_folders()
         task = tg.MiniImagenetTask(metatrain_folders,CLASS_NUM,SAMPLE_NUM_PER_CLASS,BATCH_NUM_PER_CLASS)
@@ -133,8 +157,8 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
         # sample datas
         samples,sample_labels,supportNames = sample_dataloader.__iter__().next()
         batches,batch_labels,batchQueryNames = batch_dataloader.__iter__().next()
-        print('teacher: ', sample_labels2, supportNames2, batch_labels2, batchQueryNames2)
-        print('student: ', sample_labels, supportNames, batch_labels, batchQueryNames)
+        # print('teacher: ', sample_labels2, supportNames2, batch_labels2, batchQueryNames2)
+        # print('student: ', sample_labels, supportNames, batch_labels, batchQueryNames)
         # exit()
         
         
@@ -179,7 +203,7 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
         if (episode+1)%100 == 0:
             print("episode:",episode+1,"loss",loss.item())
 
-        if (episode+1)%5000 == 0:
+        if (episode+1)%250 == 0:
             print("Testing...")
             accuracies = []
             for i in range(TEST_EPISODE):
@@ -204,7 +228,7 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
                     sample_features_ext = sample_features.unsqueeze(0).repeat(batch_size,1,1,1,1)
                     test_features_ext = test_features.unsqueeze(0).repeat(1*CLASS_NUM,1,1,1,1)
                     test_features_ext = torch.transpose(test_features_ext,0,1)
-                    relation_pairs = torch.cat((sample_features_ext,test_features_ext),2).view(-1,FEATURE_DIM*2,19,19)
+                    relation_pairs = torch.cat((sample_features_ext,test_features_ext),2).view(-1,dim['channel']*2,7,7)
                     relations = classifier(relation_pairs).view(-1,CLASS_NUM)
 
                     _,predict_labels = torch.max(relations.data,1)
@@ -220,7 +244,7 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
 
             print("test accuracy:",test_accuracy,"h:",h)
 
-            if test_accuracy > last_accuracy
+            if test_accuracy > last_accuracy:
                 # save networks
                 test_res = 'acc: ' + str(test_accuracy) + 'episode: ' + str(episode)
                 if encOpt:
@@ -238,17 +262,20 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
 if __name__ == '__main__': # load existing model
     logging.basicConfig(filename=EXPERIMENT_NAME, level=logging.INFO)
     teacherEnc = models.vgg16(pretrained=True).features
-    for param in teacherEnc.params():
-        param.require_gradient = False
-    teacherClassifier = RelationNetwork()
+    teacherEnc.cuda()
+    for param in teacherEnc.parameters():
+        param.requires_grad = False
+    teacherClassifier = TeacherRelationNetwork(teacher_dim['channel'])
     teacherClassifier.apply(weights_init)
+    teacherClassifier.cuda()
     tempOpt = torch.optim.Adam(teacherClassifier.parameters(),lr=LEARNING_RATE)
     train(teacherEnc, teacherClassifier, tempOpt, teacher_dim)
-    for param in teacherClassifier.params():
-        param.require_gradient = False
+    exit()
+    for param in teacherClassifier.parameters():
+        param.requires_grad = False
 
     stuEnc = CNNstudent()
-    stuClassifier = RelationNetwork()
+    stuClassifier = RelationNetwork(stu_dim['channel'])
     stuEnc.apply(weights_init)
     stuClassifier.apply(weights_init)
     enc_optimizer = torch.optim.Adam(stuEnc.parameters(),lr=LEARNING_RATE)

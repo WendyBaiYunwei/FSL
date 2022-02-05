@@ -112,7 +112,7 @@ class ClassBalancedSampler(Sampler):
     ''' Samples 'num_inst' examples each from 'num_cl' pools
         of examples of size 'num_per_class' '''
 
-    def __init__(self, num_per_class, num_cl, num_inst,shuffle=True):
+    def __init__(self, num_per_class, num_cl, num_inst, shuffle=True):
         self.num_per_class = num_per_class
         self.num_cl = num_cl
         self.num_inst = num_inst
@@ -134,7 +134,7 @@ class ClassBalancedSampler(Sampler):
         return 1
 
 
-def get_mini_imagenet_data_loader(task, num_per_class=1, split='train',shuffle = False):
+def get_mini_imagenet_data_loader(task, num_per_class=1, split='train', shuffle = False):
     normalize = transforms.Normalize(mean=[0.92206, 0.92206, 0.92206], std=[0.08426, 0.08426, 0.08426])
 
     dataset = MiniImagenet(task,split=split,transform=transforms.Compose([transforms.ToTensor(),normalize]))
@@ -143,6 +143,20 @@ def get_mini_imagenet_data_loader(task, num_per_class=1, split='train',shuffle =
         sampler = ClassBalancedSampler(num_per_class, task.num_classes, task.train_num,shuffle=shuffle)
     else:
         sampler = ClassBalancedSampler(num_per_class, task.num_classes, task.test_num,shuffle=shuffle)
+
+    loader = DataLoader(dataset, batch_size=num_per_class*task.num_classes, sampler=sampler)
+
+    return loader
+
+def get_mini_imagenet_data_loader_big(task, num_per_class=1, split='train',shuffle = False):
+    normalize = transforms.Normalize(mean=[0.92206, 0.92206, 0.92206], std=[0.08426, 0.08426, 0.08426])
+
+    dataset = MiniImagenet(task,split=split,transform=transforms.Compose([transforms.Resize(224), transforms.ToTensor(),normalize]))
+
+    if split == 'train':
+        sampler = ClassBalancedSampler(num_per_class, task.num_classes, task.train_num, shuffle=shuffle)
+    else:
+        sampler = ClassBalancedSampler(num_per_class, task.num_classes, task.test_num, shuffle=shuffle)
 
     loader = DataLoader(dataset, batch_size=num_per_class*task.num_classes, sampler=sampler)
 
