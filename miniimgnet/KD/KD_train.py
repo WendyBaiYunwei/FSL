@@ -10,7 +10,7 @@ import numpy as np
 import scipy as sp
 import scipy.stats
 import math
-
+import os
 
 class RelationNetwork(nn.Module):
     """docstring for RelationNetwork"""
@@ -61,44 +61,41 @@ class TeacherRelationNetwork(nn.Module):
         out = F.sigmoid(self.fc2(out))
         return out
 
-class CNNstudent(nn.Module):
+class CNNEncoder(nn.Module):
+    """docstring for ClassName"""
     def __init__(self):
-        super(CNNstudent, self).__init__()
-        self.conv1 = nn.Sequential(         
-            nn.Conv2d(
-                in_channels=3,              
-                out_channels=16,            
-                kernel_size=5,           
-                stride=1,                   
-                padding=2,                  
-            ),                              
-            nn.ReLU(),                      
-            nn.MaxPool2d(kernel_size=2),    
-        )
-        self.conv2 = nn.Sequential(         
-            nn.Conv2d(16, 32, 5, 1, 2),     
-            nn.ReLU(),                      
-            nn.MaxPool2d(2),      
-            nn.Conv2d(32, 64, 3, 1, 1),     
-            nn.ReLU(),
-        )
-        self.inter1 = nn.Linear(19 * 19 * 64, 5000)
-        self.inter2 = nn.Linear(5000, 7 * 7 * 512)
-        self.out = nn.Linear(7 * 7 * 512, 10)
+        super(CNNEncoder, self).__init__()
+        self.layer1 = nn.Sequential(
+                        nn.Conv2d(3,64,kernel_size=3,padding=0),
+                        nn.BatchNorm2d(64, momentum=1, affine=True),
+                        nn.ReLU(),
+                        nn.MaxPool2d(2))
+        self.layer2 = nn.Sequential(
+                        nn.Conv2d(64,64,kernel_size=3,padding=0),
+                        nn.BatchNorm2d(64, momentum=1, affine=True),
+                        nn.ReLU(),
+                        nn.MaxPool2d(2))
+        self.layer3 = nn.Sequential(
+                        nn.Conv2d(64,64,kernel_size=3,padding=1),
+                        nn.BatchNorm2d(64, momentum=1, affine=True),
+                        nn.ReLU())
+        self.layer4 = nn.Sequential(
+                        nn.Conv2d(64,64,kernel_size=3,padding=1),
+                        nn.BatchNorm2d(64, momentum=1, affine=True),
+                        nn.ReLU())
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = x.flatten(start_dim = 1)
-        x = self.inter1(x)
-        x = self.inter2(x)
-        y = self.out(x)
-        return x, y
+    def forward(self,x):
+        out = self.layer1(x)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        out = self.layer4(out)
+        #out = out.view(out.size(0),-1)
+        return out # 64
         
 torch.manual_seed(0)
 LEARNING_RATE = 0.001
 EXPERIMENT_NAME = 'TEST.txt'
-EPISODE = 1000
+EPISODE = 10000
 CLASS_NUM = 5
 SAMPLE_NUM_PER_CLASS = 1
 BATCH_NUM_PER_CLASS = 15
@@ -133,14 +130,14 @@ def mean_confidence_interval(data, confidence=0.95):
 def loss_fn_kd(outputs, labels, teacher_outputs):
     KD_loss = nn.KLDivLoss()(F.log_softmax(outputs/T, dim=1),
                              F.softmax(teacher_outputs/T, dim=1)) * (alpha * T * T) + \
-              F.cross_entropy(outputs, labels) * (1. - alpha)
+              F.cross_entropy(outputs, labels.long().cuda()) * (1. - alpha)
 
     return KD_loss
 
 def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = None, teacher_classifier = None):
     last_accuracy = 0.0
+    metatrain_folders,metatest_folders = tg.mini_imagenet_folders()
     for episode in range(EPISODE):
-        metatrain_folders,metatest_folders = tg.mini_imagenet_folders()
         task = tg.MiniImagenetTask(metatrain_folders,CLASS_NUM,SAMPLE_NUM_PER_CLASS,BATCH_NUM_PER_CLASS)
 
         if encOpt: # if training the student
@@ -171,7 +168,7 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
         batch_features_ext = torch.transpose(batch_features_ext,0,1)
         relation_pairs = torch.cat((sample_features_ext,batch_features_ext),2).view(-1,dim['channel']*2,dim['dim'],dim['dim']) # teaher / student
         relations = classifier(relation_pairs).view(-1,CLASS_NUM*SAMPLE_NUM_PER_CLASS)
-        one_hot_labels = Variable(torch.zeros(BATCH_NUM_PER_CLASS*CLASS_NUM, CLASS_NUM).scatter_(1, batch_labels.view(-1,1), 1)).cuda()
+        # one_hot_labels = Variable(torch.zeros(BATCH_NUM_PER_CLASS*CLASS_NUM, CLASS_NUM).scatter_(1, batch_labels.view(-1,1), 1)).cuda()
 
         if encOpt:
             encoder.zero_grad()
@@ -183,7 +180,7 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
             teaccher_relation_pairs = torch.cat((teacher_support_features_ext,teacher_q_features_ext),2).view(-1,teacher_dim['channel']*2,teacher_dim['dim'],teacher_dim['dim'])
             teacher_outputs = teacher_classifier(teaccher_relation_pairs).view(-1,CLASS_NUM*SAMPLE_NUM_PER_CLASS)
 
-            loss = loss_fn_kd(relations, one_hot_labels, teacher_outputs)
+            loss = loss_fn_kd(relations, batch_labels, teacher_outputs)
         else:
             mse = nn.MSELoss().cuda()
             loss = mse(relations,one_hot_labels)
@@ -203,7 +200,7 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
         if (episode+1)%100 == 0:
             print("episode:",episode+1,"loss",loss.item())
 
-        if (episode+1)%250 == 0:
+        if (episode+1)%500 == 0:
             print("Testing...")
             accuracies = []
             for i in range(TEST_EPISODE):
@@ -228,7 +225,7 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
                     sample_features_ext = sample_features.unsqueeze(0).repeat(batch_size,1,1,1,1)
                     test_features_ext = test_features.unsqueeze(0).repeat(1*CLASS_NUM,1,1,1,1)
                     test_features_ext = torch.transpose(test_features_ext,0,1)
-                    relation_pairs = torch.cat((sample_features_ext,test_features_ext),2).view(-1,dim['channel']*2,7,7)
+                    relation_pairs = torch.cat((sample_features_ext,test_features_ext),2).view(-1,dim['channel']*2,dim['dim'],dim['dim'])
                     relations = classifier(relation_pairs).view(-1,CLASS_NUM)
 
                     _,predict_labels = torch.max(relations.data,1)
@@ -268,16 +265,23 @@ if __name__ == '__main__': # load existing model
     teacherClassifier = TeacherRelationNetwork(teacher_dim['channel'])
     teacherClassifier.apply(weights_init)
     teacherClassifier.cuda()
+    
     tempOpt = torch.optim.Adam(teacherClassifier.parameters(),lr=LEARNING_RATE)
-    train(teacherEnc, teacherClassifier, tempOpt, teacher_dim)
-    exit()
+    if False and os.path.exists(str("./models/teacher_class" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
+        teacherClassifier.load_state_dict(torch.load(str("./models/teacher_class"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
+        print("load relation network success")
+    else:
+        train(teacherEnc, teacherClassifier, tempOpt, teacher_dim)
+
     for param in teacherClassifier.parameters():
         param.requires_grad = False
-
-    stuEnc = CNNstudent()
+    
+    stuEnc = CNNEncoder()
     stuClassifier = RelationNetwork(stu_dim['channel'])
     stuEnc.apply(weights_init)
     stuClassifier.apply(weights_init)
+    stuEnc.cuda()
+    stuClassifier.cuda()
     enc_optimizer = torch.optim.Adam(stuEnc.parameters(),lr=LEARNING_RATE)
     cls_optimizer = torch.optim.Adam(stuClassifier.parameters(),lr=LEARNING_RATE)
     train(stuEnc, stuClassifier, cls_optimizer, stu_dim, enc_optimizer, teacherEnc, teacherClassifier)

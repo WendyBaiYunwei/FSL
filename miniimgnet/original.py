@@ -19,6 +19,7 @@ import argparse
 import scipy as sp
 import scipy.stats
 import pickle
+import logging
 
 torch.manual_seed(0)
 
@@ -48,6 +49,7 @@ LEARNING_RATE = args.learning_rate
 GPU = args.gpu
 HIDDEN_UNIT = args.hidden_unit
 ORDERED = args.ordered
+EXPERIMENT_NAME = 'original.txt'
 
 def mean_confidence_interval(data, confidence=0.95):
     a = 1.0*np.array(data)
@@ -127,12 +129,6 @@ def weights_init(m):
         m.weight.data.normal_(0, 0.01)
         m.bias.data = torch.ones(m.bias.data.size())
 
-def getK(relationScores, correctClass):
-    correctClassScore = relationScores[correctClass].item()
-    relationScores[correctClass] = -1
-    confusingScore = torch.max(relationScores)
-    return correctClassScore - confusingScore #the higher, the easier
-
 def get_corrected_rel(relations, one_hot_labels): # query_M, support_K * support_N # to-do: unit test
     relations = relations.detach()
     one_hot_labels = one_hot_labels.detach()
@@ -150,6 +146,7 @@ def get_corrected_rel(relations, one_hot_labels): # query_M, support_K * support
     return corrected_relations
 
 def main():
+    logging.basicConfig(filename=EXPERIMENT_NAME, level=logging.INFO)
     # Step 1: init data folders
     print("init data folders")
     # init character folders for dataset construction
@@ -183,9 +180,9 @@ def main():
     print("Training...")
 
     last_accuracy = 0.0
-    pToDiff = {}
-
+    cur_loss = 0
     for episode in range(EPISODE):
+        losses = []
         feature_encoder_scheduler.step(episode)
         relation_network_scheduler.step(episode)
 
@@ -217,7 +214,7 @@ def main():
         one_hot_labels = Variable(torch.zeros(BATCH_NUM_PER_CLASS*CLASS_NUM, CLASS_NUM).scatter_(1, batch_labels.view(-1,1), 1)).cuda(GPU)
         # corrected_relations = get_corrected_rel(relations, one_hot_labels)
         corrected_relations = relations
-        loss = mse(relations,corrected_relations)
+        loss = mse(relations,one_hot_labels)
 
         # training
         feature_encoder.zero_grad()
@@ -278,12 +275,16 @@ def main():
             if test_accuracy > last_accuracy:
 
                 # save networks
-                torch.save(feature_encoder.state_dict(),str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
-                torch.save(relation_network.state_dict(),str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+                torch.save(feature_encoder.state_dict(),str("./models/orig_enc" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+                torch.save(relation_network.state_dict(),str("./models/orig_cla"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
 
                 print("save networks for episode:",episode)
-
+                info = str(episode) + ' ' + str(test_accuracy) + ' ' + str(cur_loss)
+                logging.info(info)
                 last_accuracy = test_accuracy
+
+            cur_loss = sum(losses) / 50
+            losses.clear()
 
 
 if __name__ == '__main__':
