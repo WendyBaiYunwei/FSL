@@ -46,7 +46,11 @@ class TeacherRelationNetwork(nn.Module):
                         nn.BatchNorm2d(512, momentum=1, affine=True),
                         nn.ReLU())
         self.layer2 = nn.Sequential(
-                        nn.Conv2d(512,64,kernel_size=1,padding=0),
+                        nn.Conv2d(512,256,kernel_size=1,padding=0),
+                        nn.BatchNorm2d(512, momentum=1, affine=True),
+                        nn.ReLU())
+        self.layer3 = nn.Sequential(
+                        nn.Conv2d(256,64,kernel_size=1,padding=0),
                         nn.BatchNorm2d(64, momentum=1, affine=True),
                         nn.ReLU(),
                         nn.MaxPool2d(2))
@@ -56,6 +60,7 @@ class TeacherRelationNetwork(nn.Module):
     def forward(self,x):
         out = self.layer1(x)
         out = self.layer2(out)
+        out = self.layer3(out)
         out = out.view(out.size(0),-1)
         out = F.relu(self.fc1(out))
         out = F.sigmoid(self.fc2(out))
@@ -168,7 +173,7 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
         batch_features_ext = torch.transpose(batch_features_ext,0,1)
         relation_pairs = torch.cat((sample_features_ext,batch_features_ext),2).view(-1,dim['channel']*2,dim['dim'],dim['dim']) # teaher / student
         relations = classifier(relation_pairs).view(-1,CLASS_NUM*SAMPLE_NUM_PER_CLASS)
-        # one_hot_labels = Variable(torch.zeros(BATCH_NUM_PER_CLASS*CLASS_NUM, CLASS_NUM).scatter_(1, batch_labels.view(-1,1), 1)).cuda()
+        one_hot_labels = Variable(torch.zeros(BATCH_NUM_PER_CLASS*CLASS_NUM, CLASS_NUM).scatter_(1, batch_labels.view(-1,1), 1)).cuda()
 
         if encOpt:
             encoder.zero_grad()
