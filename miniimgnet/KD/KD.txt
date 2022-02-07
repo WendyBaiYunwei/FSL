@@ -1,0 +1,2 @@
+INFO:root:student: acc: 0.3193333333333333episode: 499
+INFO:root:student: acc: 0.32666666666666666episode: 1999
