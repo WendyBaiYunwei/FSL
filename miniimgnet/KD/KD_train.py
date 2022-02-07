@@ -15,9 +15,39 @@ from dataset import get_loader, get_loader_sm
 from skimage import io
 import torchvision.transforms as transforms
 
+
+class TeacherClassifier(nn.Module):
+    """docstring for RelationNetwork"""
+    def __init__(self,hidden_size=20):
+        super(TeacherClassifier, self).__init__()
+        self.layer1 = nn.Sequential(
+                        nn.Conv2d(512,256,kernel_size=1,padding=0),
+                        nn.BatchNorm2d(256, momentum=1, affine=True),
+                        nn.ReLU())
+        self.layer2 = nn.Sequential(
+                        nn.Conv2d(256,128,kernel_size=1,padding=0),
+                        nn.BatchNorm2d(128, momentum=1, affine=True),
+                        nn.ReLU())
+        self.layer3 = nn.Sequential(
+                        nn.Conv2d(128,32,kernel_size=1,padding=0),
+                        nn.BatchNorm2d(32, momentum=1, affine=True),
+                        nn.ReLU(),
+                        nn.MaxPool2d(2))
+        self.fc1 = nn.Linear(32*3*3,hidden_size)
+        self.fc2 = nn.Linear(hidden_size,64)
+
+    def forward(self,x):
+        out = self.layer1(x)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        out = out.view(out.size(0),-1)
+        out = F.relu(self.fc1(out))
+        out = F.sigmoid(self.fc2(out))
+        return out
+
 class StuClassifier(nn.Module):
     """docstring for RelationNetwork"""
-    def __init__(self,hidden_size=100):
+    def __init__(self,hidden_size=20):
         super(StuClassifier, self).__init__()
         self.layer1 = nn.Sequential(
                         nn.Conv2d(64,32,kernel_size=3,padding=0),
@@ -162,7 +192,7 @@ def mean_confidence_interval(data, confidence=0.95):
     return m,h
 
 def loss_fn_kd(outputs, labels, teacher_outputs):
-    KD_loss = nn.KLDivLoss()(F.log_softmax(outputs/T, dim=1),
+    KD_loss = nn.KLDivLoss(reduction = 'batchmean')(F.log_softmax(outputs/T, dim=1),
                              F.softmax(teacher_outputs/T, dim=1)) * (alpha * T * T) + \
               F.cross_entropy(outputs, labels.long().cuda()) * (1. - alpha)
 
@@ -302,6 +332,7 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
                 last_accuracy = test_accuracy
 
 def test(enc, classifier):
+    print('testing...')
     testLoader = get_loader('test')
     classifier.eval()
     accuracy = 0
@@ -318,32 +349,35 @@ def test(enc, classifier):
     print('Test Accuracy of the model on the test images:', accuracy  / len(testLoader))
     return accuracy
 
-def traditionalKD(stuEnc, stuClass, teacherEnc, teacherClass):
+def traditionalKD(stuEnc, stuClass, teacherEnc):
     trainLoader = get_loader('train')
+    teacherClass = TeacherClassifier()
+    teacherClass.apply(weights_init)
+    teacherClass.cuda()
     optimizer = torch.optim.Adam(teacherClass.parameters(), lr=1e-3)
     lFunc = nn.CrossEntropyLoss()
 
     best_acc = 0
     # train teacher classifier
-    print('train teacher classifier...')
-    for epoch in range(10):
-        print(epoch)
-        for x, y in trainLoader:
-            x = teacherEnc(Variable(x).cuda())
-            y = teacherClass(x)
-            optimizer.zero_grad()
+    # print('train teacher classifier...')
+    # for epoch in range(3):
+    #     print(epoch)
+    #     for x, y, _ in trainLoader:
+    #         x = teacherEnc(Variable(x).cuda())
+    #         output = teacherClass(x)
+    #         optimizer.zero_grad()
 
-            label = Variable(label).cuda()
-            loss = lFunc(y, label)
-            loss.backward()
+    #         label = Variable(y).cuda()
+    #         loss = lFunc(output, label)
+    #         loss.backward()
 
-            optimizer.step()
+    #         optimizer.step()
         
-        acc = test(teacherEnc, teacherClass)
-        if acc > best_acc:
-            # save teacher classifier
-            torch.save(teacherClass.state_dict(),str("./models/teacher_norm_class"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
-            best_acc = acc
+    #     acc = test(teacherEnc, teacherClass)
+    #     if acc > best_acc:
+    #         # save teacher classifier
+    #         torch.save(teacherClass.state_dict(),str("./models/teacher_norm_class"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+    #         best_acc = acc
 
     for param in teacherClass.parameters():
         param.requires_grad = False
@@ -352,30 +386,31 @@ def traditionalKD(stuEnc, stuClass, teacherEnc, teacherClass):
     
     # train student using distillation
     # test student
+    best_acc = 0
     trainLoader = get_loader_sm('train')
+    trainLoaderBig = get_loader
     stuEncOpt = torch.optim.Adam(stuEnc.parameters(), lr=1e-3)
     stuClassOpt = torch.optim.Adam(stuClass.parameters(), lr=1e-3)
     print('train student encoder...')
     for epoch in range(10):
         print(epoch)
-        for x, y in trainLoader:
-            x = stuEnc(x)
-            outputs = stuClass(x)
+        for x, y, paths in trainLoader:
+            input = stuEnc(Variable(x).cuda())
+            outputs = stuClass(input)
 
-            x = getBiggerImg(x)
+            x = getBiggerImg(paths)
             x = teacherEnc(Variable(x).cuda())
             teacher_outputs = teacherClass(x)
             stuEncOpt.zero_grad()
             stuClassOpt.zero_grad()
 
             label = Variable(y).cuda()
-            loss = loss_fn_kd(outputs, y, teacher_outputs)
+            loss = loss_fn_kd(outputs, label, teacher_outputs)
             loss.backward()
 
             stuEncOpt.step()
             stuClassOpt.step()
 
-        
         acc = test(stuEnc, stuClass)
         if acc > best_acc:
             # save teacher classifier
@@ -398,13 +433,10 @@ if __name__ == '__main__': # load existing model
     stuEnc = CNNEncoder()
     stuEnc.apply(weights_init)
     stuEnc.cuda()
-    modules=list(resnet18.children())[-2:]
-    teacherClass=nn.Sequential(*modules)
-    teacherClass.cuda()
     stuClass = StuClassifier()
     stuClass.apply(weights_init)
     stuClass.cuda()
-    stuEnc = traditionalKD(stuEnc, stuClass, teacherEnc, teacherClass)
+    stuEnc = traditionalKD(stuEnc, stuClass, teacherEnc)
     
     teacherClassifier = TeacherRelationNetwork(teacher_dim['channel'])
     teacherClassifier.apply(weights_init)

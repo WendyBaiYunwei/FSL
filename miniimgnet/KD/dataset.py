@@ -36,7 +36,7 @@ class MiniImgnet(Dataset):
             x = self.transform(x)
         y = int(self.train_labels[index])
         y = torch.tensor(y, dtype=torch.long)
-        return x, y
+        return x, y, x_path
 
     def __len__(self):
         return len(self.train_roots)
