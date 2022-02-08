@@ -10,6 +10,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
 from torch.utils.data.sampler import Sampler
+from torch.optim.lr_scheduler import StepLR
 
 def imshow(img):
     npimg = img.numpy()

@@ -41,6 +41,9 @@ class MiniImgnet(Dataset):
     def __len__(self):
         return len(self.train_roots)
 
+    def debug(self):
+        print(self.train_roots[0])
+
 def get_loader(type):
     normalize = transforms.Normalize(mean=[0.92206, 0.92206, 0.92206], std=[0.08426, 0.08426, 0.08426])
     transform=transforms.Compose([transforms.ToTensor(),normalize,transforms.Resize(224)])
@@ -54,3 +57,6 @@ def get_loader_sm(type):
     dataset = MiniImgnet(type, transform=transform)
     loader = DataLoader(dataset, batch_size=32)
     return loader
+
+# loader = MiniImgnet('test')
+# loader.debug()

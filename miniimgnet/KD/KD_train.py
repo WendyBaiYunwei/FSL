@@ -14,6 +14,7 @@ import os
 from dataset import get_loader, get_loader_sm
 from skimage import io
 import torchvision.transforms as transforms
+from torch.optim.lr_scheduler import StepLR
 
 
 class TeacherClassifier(nn.Module):
@@ -158,7 +159,7 @@ class CNNEncoder(nn.Module):
 torch.manual_seed(0)
 LEARNING_RATE = 0.001
 EXPERIMENT_NAME = 'alpha0.9.txt'
-EPISODE = 10000
+EPISODE = 500000
 CLASS_NUM = 5
 SAMPLE_NUM_PER_CLASS = 1
 BATCH_NUM_PER_CLASS = 15
@@ -168,6 +169,7 @@ TEST_EPISODE = 600
 T = 20
 alpha = 0.9 #to-do change / 29.7
 SKIP_TEACHER = True
+STU_ENC_TYPE = 2 # 0: scratch, 1: norm encoder, 2:ressume from rel net encoder
 
 def weights_init(m):
     classname = m.__class__.__name__
@@ -192,7 +194,7 @@ def mean_confidence_interval(data, confidence=0.95):
     return m,h
 
 def loss_fn_kd(outputs, labels, teacher_outputs):
-    KD_loss = nn.KLDivLoss(reduction = 'batchmean')(F.log_softmax(outputs/T, dim=1),
+    KD_loss = nn.KLDivLoss()(F.log_softmax(outputs/T, dim=1),
                              F.softmax(teacher_outputs/T, dim=1)) * (alpha * T * T) + \
               F.cross_entropy(outputs, labels.long().cuda()) * (1. - alpha)
 
@@ -213,10 +215,15 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
     last_accuracy = 0.0
     metatrain_folders,metatest_folders = tg.mini_imagenet_folders()
     losses = []
+    if encOpt:
+        enc_sch = StepLR(encOpt,step_size=100000,gamma=0.5)
+        cls_sch = StepLR(classOpt,step_size=100000,gamma=0.5)
     for episode in range(EPISODE):
         task = tg.MiniImagenetTask(metatrain_folders,CLASS_NUM,SAMPLE_NUM_PER_CLASS,BATCH_NUM_PER_CLASS)
 
         if encOpt: # if training the student
+            enc_sch.step(episode)
+            cls_sch.step(episode)
             sample_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False) ###adjust image dimension, check shuffle
             batch_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=BATCH_NUM_PER_CLASS,split="test",shuffle=True) #true
             samples,sample_labels,supportNames = sample_dataloader.__iter__().next()
@@ -331,22 +338,24 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
 
                 last_accuracy = test_accuracy
 
-def test(enc, classifier):
+def test(enc, classifier, type):
     print('testing...')
-    testLoader = get_loader('test')
+    if type == 'teacher':
+        testLoader = get_loader('test')
+    else:
+        testLoader = get_loader_sm('test')
+    enc.eval()
     classifier.eval()
     accuracy = 0
     count = 0
-    for inputs, labels in testLoader:
+    for inputs, labels, _ in testLoader:
         x = enc(Variable(inputs).cuda())
         output = classifier(x)
         pred_y = torch.max(output, 1)[1].data.squeeze()
         labels = Variable(labels).cuda()
         accuracy += (pred_y == labels).sum().item()
         count += 1
-        if count % 500 == 0:
-            print(count)
-    print('Test Accuracy of the model on the test images:', accuracy  / len(testLoader))
+    print('Test Accuracy of the model on the test images:', accuracy  / 600 / 20)
     return accuracy
 
 def traditionalKD(stuEnc, stuClass, teacherEnc):
@@ -359,25 +368,25 @@ def traditionalKD(stuEnc, stuClass, teacherEnc):
 
     best_acc = 0
     # train teacher classifier
-    # print('train teacher classifier...')
-    # for epoch in range(3):
-    #     print(epoch)
-    #     for x, y, _ in trainLoader:
-    #         x = teacherEnc(Variable(x).cuda())
-    #         output = teacherClass(x)
-    #         optimizer.zero_grad()
+    print('train teacher classifier...')
+    for epoch in range(30):
+        print(epoch)
+        for x, y, _ in trainLoader:
+            x = teacherEnc(Variable(x).cuda())
+            output = teacherClass(x)
+            optimizer.zero_grad()
 
-    #         label = Variable(y).cuda()
-    #         loss = lFunc(output, label)
-    #         loss.backward()
+            label = Variable(y).cuda()
+            loss = lFunc(output, label)
+            loss.backward()
 
-    #         optimizer.step()
+            optimizer.step()
         
-    #     acc = test(teacherEnc, teacherClass)
-    #     if acc > best_acc:
-    #         # save teacher classifier
-    #         torch.save(teacherClass.state_dict(),str("./models/teacher_norm_class"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
-    #         best_acc = acc
+        acc = test(teacherEnc, teacherClass, 'teacher')
+        if acc > best_acc:
+            # save teacher classifier
+            torch.save(teacherClass.state_dict(),str("./models/teacher_norm_class"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+            best_acc = acc
 
     for param in teacherClass.parameters():
         param.requires_grad = False
@@ -392,7 +401,7 @@ def traditionalKD(stuEnc, stuClass, teacherEnc):
     stuEncOpt = torch.optim.Adam(stuEnc.parameters(), lr=1e-3)
     stuClassOpt = torch.optim.Adam(stuClass.parameters(), lr=1e-3)
     print('train student encoder...')
-    for epoch in range(10):
+    for epoch in range(30):
         print(epoch)
         for x, y, paths in trainLoader:
             input = stuEnc(Variable(x).cuda())
@@ -411,10 +420,10 @@ def traditionalKD(stuEnc, stuClass, teacherEnc):
             stuEncOpt.step()
             stuClassOpt.step()
 
-        acc = test(stuEnc, stuClass)
+        acc = test(stuEnc, stuClass, 'student')
         if acc > best_acc:
             # save teacher classifier
-            torch.save(teacherClass.state_dict(),str("./models/stu_enc_norm"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+            torch.save(stuEnc.state_dict(),str("./models/stu_enc_norm"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
             best_acc = acc
     
     stuEnc.load_state_dict(torch.load(str("./models/stu_enc_norm"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
@@ -436,7 +445,20 @@ if __name__ == '__main__': # load existing model
     stuClass = StuClassifier()
     stuClass.apply(weights_init)
     stuClass.cuda()
-    stuEnc = traditionalKD(stuEnc, stuClass, teacherEnc)
+    stuClassifier = RelationNetwork(stu_dim['channel']) #to-do: scheduler
+    stuClassifier.apply(weights_init)
+    stuClassifier.cuda()
+
+    if STU_ENC_TYPE == 0:
+        stuEnc = traditionalKD(stuEnc, stuClass, teacherEnc)
+    elif STU_ENC_TYPE == 1 and os.path.exists(str("./models/stu_enc_norm" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
+        stuEnc.load_state_dict(torch.load(str("./models/stu_enc_norm"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
+        print("load student encoder success")
+    else:
+        stuEnc.load_state_dict(torch.load(str("./models/stu_enc"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
+        print("load student encoder success")
+        stuClassifier.load_state_dict(torch.load(str("./models/stu_class"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
+        print("load student relation classifier success")
     
     teacherClassifier = TeacherRelationNetwork(teacher_dim['channel'])
     teacherClassifier.apply(weights_init)
@@ -445,7 +467,7 @@ if __name__ == '__main__': # load existing model
     tempOpt = torch.optim.Adam(teacherClassifier.parameters(),lr=LEARNING_RATE)
     if SKIP_TEACHER and os.path.exists(str("./models/teacher_class" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
         teacherClassifier.load_state_dict(torch.load(str("./models/teacher_class"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-        print("load relation network success")
+        print("load teacher relation network success")
     else:
         print('Prepare teacher relation network...')
         train(teacherEnc, teacherClassifier, tempOpt, teacher_dim)
@@ -453,9 +475,8 @@ if __name__ == '__main__': # load existing model
     for param in teacherClassifier.parameters():
         param.requires_grad = False
 
-    stuClassifier = RelationNetwork(stu_dim['channel'])
-    stuClassifier.apply(weights_init)
-    stuClassifier.cuda()
     enc_optimizer = torch.optim.Adam(stuEnc.parameters(),lr=LEARNING_RATE)
+    
     cls_optimizer = torch.optim.Adam(stuClassifier.parameters(),lr=LEARNING_RATE)
+    
     train(stuEnc, stuClassifier, cls_optimizer, stu_dim, enc_optimizer, teacherEnc, teacherClassifier)
