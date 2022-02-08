@@ -158,7 +158,7 @@ class CNNEncoder(nn.Module):
         
 torch.manual_seed(0)
 LEARNING_RATE = 0.001
-EXPERIMENT_NAME = 'alpha0.9.txt'
+EXPERIMENT_NAME = 'alpha0.9-review.txt'
 EPISODE = 500000
 CLASS_NUM = 5
 SAMPLE_NUM_PER_CLASS = 1
@@ -167,9 +167,10 @@ teacher_dim = {'channel': 512, 'dim': 7}
 stu_dim = {'channel': 64, 'dim': 19}
 TEST_EPISODE = 600
 T = 20
-alpha = 0.9 #to-do change / 29.7
-SKIP_TEACHER = True
-STU_ENC_TYPE = 2 # 0: scratch, 1: norm encoder, 2:ressume from rel net encoder
+alpha = 0.9
+TEACHER_REL_CLASS = False
+TEACHER_NORM_CLASS = False
+RESUME_REL_NET = False # 0: scratch, 1:ressume from rel net encoder
 
 def weights_init(m):
     classname = m.__class__.__name__
@@ -211,36 +212,40 @@ def getBiggerImg(names):
         res.append(x)
     return torch.stack(res)
 
-def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = None, teacher_classifier = None):
+def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = None, teacher_classifier = None, stu_norm_class = None):
     last_accuracy = 0.0
     metatrain_folders,metatest_folders = tg.mini_imagenet_folders()
     losses = []
+    interval = {}
+    # to-do: to complete
+    for ei in range(EPISODE):
+        if ei <= 5000:
+            interval[ei] = 1000
+        pass
     if encOpt:
         enc_sch = StepLR(encOpt,step_size=100000,gamma=0.5)
         cls_sch = StepLR(classOpt,step_size=100000,gamma=0.5)
     for episode in range(EPISODE):
         task = tg.MiniImagenetTask(metatrain_folders,CLASS_NUM,SAMPLE_NUM_PER_CLASS,BATCH_NUM_PER_CLASS)
 
+        sample_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False) ###adjust image dimension, check shuffle
+        batch_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=BATCH_NUM_PER_CLASS,split="test",shuffle=True) #true
+        samples,sample_labels,supportNames = sample_dataloader.__iter__().next()
+        batches,batch_labels,batchQueryNames = batch_dataloader.__iter__().next() 
         if encOpt: # if training the student
             enc_sch.step(episode)
             cls_sch.step(episode)
-            sample_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False) ###adjust image dimension, check shuffle
-            batch_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=BATCH_NUM_PER_CLASS,split="test",shuffle=True) #true
-            samples,sample_labels,supportNames = sample_dataloader.__iter__().next()
-            batches,batch_labels,batchQueryNames = batch_dataloader.__iter__().next()
             samples2 = getBiggerImg(supportNames)
             batches2 = getBiggerImg(batchQueryNames)
         else: # trains teacher
         # sample datas
-            _,sample_labels,supportNames = sample_dataloader.__iter__().next()
-            _,batch_labels,batchQueryNames = batch_dataloader.__iter__().next()
             samples = getBiggerImg(supportNames)
             batches = getBiggerImg(batchQueryNames) #true
         
         
         # calculate features
         sample_features = encoder(Variable(samples).cuda()) # 5x64*5*5
-        # print(sample_features.shape)
+        # logging.info(sample_features.shape)
         batch_features = encoder(Variable(batches).cuda()) # 20x64*5*5
 
         sample_features_ext = sample_features.unsqueeze(0).repeat(BATCH_NUM_PER_CLASS*CLASS_NUM,1,1,1,1) #support
@@ -279,11 +284,11 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
         classOpt.step()
 
         if (episode+1)%100 == 0:
-            print("episode:",episode+1,"loss",sum(losses)/len(losses))
+            logging.info("main episode:" + str(episode+1) + "loss" + str(sum(losses)/len(losses)))
             losses.clear()
 
         if (episode+1)%500 == 0:
-            print("Testing...")
+            logging.info("main Testing...")
             accuracies = []
             for i in range(TEST_EPISODE):
                 total_rewards = 0
@@ -321,7 +326,7 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
 
             test_accuracy,h = mean_confidence_interval(accuracies)
 
-            print("test accuracy:",test_accuracy,"h:",h)
+            logging.info("test accuracy:" + str(test_accuracy))
 
             if test_accuracy > last_accuracy:
                 # save networks
@@ -334,12 +339,15 @@ def train(encoder, classifier, classOpt, dim, encOpt = None, teacher_encoder = N
                     torch.save(classifier.state_dict(),str("./models/teacher_class"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
                     logging.info('teacher: '+ test_res)
 
-                print("save networks for episode:", episode)
+                logging.info("save networks for episode:" + str(episode))
 
                 last_accuracy = test_accuracy
 
+        if episode%interval[episode] == 0 and encOpt:
+            encoder, stu_norm_class = traditionalKD(encoder, stu_norm_class, teacher_encoder)
+
 def test(enc, classifier, type):
-    print('testing...')
+    logging.info('testing on normal classifier...')
     if type == 'teacher':
         testLoader = get_loader('test')
     else:
@@ -355,7 +363,7 @@ def test(enc, classifier, type):
         labels = Variable(labels).cuda()
         accuracy += (pred_y == labels).sum().item()
         count += 1
-    print('Test Accuracy of the model on the test images:', accuracy  / 600 / 20)
+    logging.info('Test Accuracy of the model on the test images (normal):' + str(accuracy / 600 / 20))
     return accuracy
 
 def traditionalKD(stuEnc, stuClass, teacherEnc):
@@ -368,25 +376,26 @@ def traditionalKD(stuEnc, stuClass, teacherEnc):
 
     best_acc = 0
     # train teacher classifier
-    print('train teacher classifier...')
-    for epoch in range(30):
-        print(epoch)
-        for x, y, _ in trainLoader:
-            x = teacherEnc(Variable(x).cuda())
-            output = teacherClass(x)
-            optimizer.zero_grad()
+    if TEACHER_NORM_CLASS:
+        logging.info('train teacher normal classifier...')
+        for epoch in range(30):
+            logging.info(str(epoch))
+            for x, y, _ in trainLoader:
+                x = teacherEnc(Variable(x).cuda())
+                output = teacherClass(x)
+                optimizer.zero_grad()
 
-            label = Variable(y).cuda()
-            loss = lFunc(output, label)
-            loss.backward()
+                label = Variable(y).cuda()
+                loss = lFunc(output, label)
+                loss.backward()
 
-            optimizer.step()
-        
-        acc = test(teacherEnc, teacherClass, 'teacher')
-        if acc > best_acc:
-            # save teacher classifier
-            torch.save(teacherClass.state_dict(),str("./models/teacher_norm_class"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
-            best_acc = acc
+                optimizer.step()
+            
+            acc = test(teacherEnc, teacherClass, 'teacher')
+            if acc > best_acc:
+                # save teacher classifier
+                torch.save(teacherClass.state_dict(),str("./models/teacher_norm_class"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+                best_acc = acc
 
     for param in teacherClass.parameters():
         param.requires_grad = False
@@ -397,12 +406,13 @@ def traditionalKD(stuEnc, stuClass, teacherEnc):
     # test student
     best_acc = 0
     trainLoader = get_loader_sm('train')
-    trainLoaderBig = get_loader
     stuEncOpt = torch.optim.Adam(stuEnc.parameters(), lr=1e-3)
     stuClassOpt = torch.optim.Adam(stuClass.parameters(), lr=1e-3)
-    print('train student encoder...')
-    for epoch in range(30):
-        print(epoch)
+
+    logging.info('train student encoder via normal...')
+    losses = []
+    for epoch in range(10):
+        logging.info(str(epoch))
         for x, y, paths in trainLoader:
             input = stuEnc(Variable(x).cuda())
             outputs = stuClass(input)
@@ -415,19 +425,23 @@ def traditionalKD(stuEnc, stuClass, teacherEnc):
 
             label = Variable(y).cuda()
             loss = loss_fn_kd(outputs, label, teacher_outputs)
+            losses.append(loss.item())
             loss.backward()
 
             stuEncOpt.step()
             stuClassOpt.step()
+        logging.info('train_loss: ' + str(sum(losses) / len(losses)))
 
-        acc = test(stuEnc, stuClass, 'student')
-        if acc > best_acc:
-            # save teacher classifier
-            torch.save(stuEnc.state_dict(),str("./models/stu_enc_norm"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
-            best_acc = acc
-    
-    stuEnc.load_state_dict(torch.load(str("./models/stu_enc_norm"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-    return stuEnc
+        # acc = test(stuEnc, stuClass, 'student')
+        # if acc > best_acc:
+        #     # save teacher classifier
+        #     torch.save(stuEnc.state_dict(),str("./models/stu_enc_norm"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+        #     best_acc = acc
+        torch.save(stuClass.state_dict(),str("./models/stu_class_norm"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+        torch.save(stuEnc.state_dict(),str("./models/stu_enc_norm"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+
+    # stuEnc.load_state_dict(torch.load(str("./models/stu_enc_norm"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
+    return stuEnc, stuClass
 
 if __name__ == '__main__': # load existing model
     logging.basicConfig(filename=EXPERIMENT_NAME, level=logging.INFO)
@@ -445,32 +459,27 @@ if __name__ == '__main__': # load existing model
     stuClass = StuClassifier()
     stuClass.apply(weights_init)
     stuClass.cuda()
-    stuClassifier = RelationNetwork(stu_dim['channel']) #to-do: scheduler
+    stuClassifier = RelationNetwork(stu_dim['channel'])
     stuClassifier.apply(weights_init)
     stuClassifier.cuda()
 
-    if STU_ENC_TYPE == 0:
-        stuEnc = traditionalKD(stuEnc, stuClass, teacherEnc)
-    elif STU_ENC_TYPE == 1 and os.path.exists(str("./models/stu_enc_norm" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
-        stuEnc.load_state_dict(torch.load(str("./models/stu_enc_norm"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-        print("load student encoder success")
-    else:
+    if RESUME_REL_NET:
         stuEnc.load_state_dict(torch.load(str("./models/stu_enc"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-        print("load student encoder success")
+        logging.info("load rel student encoder success")
         stuClassifier.load_state_dict(torch.load(str("./models/stu_class"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-        print("load student relation classifier success")
+        logging.info("load rel student classifier success")
     
     teacherClassifier = TeacherRelationNetwork(teacher_dim['channel'])
     teacherClassifier.apply(weights_init)
     teacherClassifier.cuda()
     
     tempOpt = torch.optim.Adam(teacherClassifier.parameters(),lr=LEARNING_RATE)
-    if SKIP_TEACHER and os.path.exists(str("./models/teacher_class" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
-        teacherClassifier.load_state_dict(torch.load(str("./models/teacher_class"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-        print("load teacher relation network success")
-    else:
-        print('Prepare teacher relation network...')
+    if TEACHER_REL_CLASS:
+        logging.info('Prepare teacher relation network...')
         train(teacherEnc, teacherClassifier, tempOpt, teacher_dim)
+    else:
+        teacherClassifier.load_state_dict(torch.load(str("./models/teacher_class"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
+        logging.info("load teacher relation network success")
 
     for param in teacherClassifier.parameters():
         param.requires_grad = False
@@ -478,5 +487,5 @@ if __name__ == '__main__': # load existing model
     enc_optimizer = torch.optim.Adam(stuEnc.parameters(),lr=LEARNING_RATE)
     
     cls_optimizer = torch.optim.Adam(stuClassifier.parameters(),lr=LEARNING_RATE)
-    
-    train(stuEnc, stuClassifier, cls_optimizer, stu_dim, enc_optimizer, teacherEnc, teacherClassifier)
+
+    train(stuEnc, stuClassifier, cls_optimizer, stu_dim, enc_optimizer, teacherEnc, teacherClassifier, stuClass)

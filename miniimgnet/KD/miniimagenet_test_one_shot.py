@@ -136,7 +136,6 @@ def main():
     feature_encoder = CNNEncoder()
     relation_network = RelationNetwork(FEATURE_DIM,RELATION_DIM)
 
-
     feature_encoder.cuda(GPU)
     relation_network.cuda(GPU)
 
