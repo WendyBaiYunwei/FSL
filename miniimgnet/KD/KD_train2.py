@@ -5,7 +5,6 @@
 # All Rights Reserved
 #-------------------------------------
 
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -19,6 +18,7 @@ import argparse
 import scipy as sp
 import scipy.stats
 import pickle
+import logging
 
 torch.manual_seed(0)
 
@@ -28,19 +28,20 @@ parser.add_argument("-r","--relation_dim",type = int, default = 8)
 parser.add_argument("-w","--class_num",type = int, default = 5)
 parser.add_argument("-s","--sample_num_per_class",type = int, default = 1)
 parser.add_argument("-b","--batch_num_per_class",type = int, default = 1)
-parser.add_argument("-e","--episode",type = int, default= 500000 - 14000) #500000 ####
+parser.add_argument("-e","--episode",type = int, default= 100000) #500000 ####
 parser.add_argument("-t","--test_episode", type = int, default = 600)
 parser.add_argument("-l","--learning_rate", type = float, default = 0.0005)
 parser.add_argument("-g","--gpu",type=int, default=0)
 parser.add_argument("-u","--hidden_unit",type=int,default=10)
-parser.add_argument("-o","--ordered",type=bool,default=True)
+parser.add_argument("-k","--kd",type=bool,default=True)
+parser.add_argument("-n","--name",type=str,required=True)
 args = parser.parse_args()
 
 # Hyper Parameters
 FEATURE_DIM = args.feature_dim
 RELATION_DIM = args.relation_dim
 CLASS_NUM = args.class_num
-SAMPLE_NUM_PER_CLASS = 1
+SAMPLE_NUM_PER_CLASS = args.sample_num_per_class
 BATCH_NUM_PER_CLASS = args.batch_num_per_class
 EPISODE = args.episode
 TEST_EPISODE = args.test_episode
@@ -48,6 +49,8 @@ LEARNING_RATE = args.learning_rate
 GPU = args.gpu
 HIDDEN_UNIT = args.hidden_unit
 ORDERED = args.ordered
+EXPERIMENT_NAME = args.name
+KD = args.kd
 
 def mean_confidence_interval(data, confidence=0.95):
     a = 1.0*np.array(data)
@@ -127,13 +130,9 @@ def weights_init(m):
         m.weight.data.normal_(0, 0.01)
         m.bias.data = torch.ones(m.bias.data.size())
 
-def getK(relationScores, correctClass):
-    correctClassScore = relationScores[correctClass].item()
-    relationScores[correctClass] = -1
-    confusingScore = torch.max(relationScores)
-    return correctClassScore - confusingScore #the higher, the easier
-
 def main():
+    logging.basicConfig(filename=EXPERIMENT_NAME + '.txt', level=logging.INFO)
+    logging.info('KD_train2')
     # Step 1: init data folders
     print("init data folders")
     # init character folders for dataset construction
@@ -156,18 +155,17 @@ def main():
     relation_network_optim = torch.optim.Adam(relation_network.parameters(),lr=LEARNING_RATE)
     relation_network_scheduler = StepLR(relation_network_optim,step_size=100000,gamma=0.5)
 
-    if os.path.exists(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
-        feature_encoder.load_state_dict(torch.load(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-        print("load feature encoder success")
-    if os.path.exists(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
-        relation_network.load_state_dict(torch.load(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-        print("load relation network success")
+    if KD:
+        feature_encoder.load_state_dict(torch.load("./models/" + EXPERIMENT_NAME + "-stuEnc.pkl"))
+        inf = "load feature encoder success"
+        logging.info(inf)
+        print(inf)
 
     # Step 3: build graph
     print("Training...")
 
     last_accuracy = 0.0
-    losses
+    losses = []
 
     for episode in range(EPISODE):
         feature_encoder_scheduler.step(episode)
@@ -206,6 +204,7 @@ def main():
         relation_network.zero_grad()
 
         loss.backward()
+        losses.append(loss.item())
 
         torch.nn.utils.clip_grad_norm(feature_encoder.parameters(),0.5)
         torch.nn.utils.clip_grad_norm(relation_network.parameters(),0.5)
@@ -213,7 +212,13 @@ def main():
         feature_encoder_optim.step()
         relation_network_optim.step()
 
-        if episode%5000 == 0: #5000
+        if (episode+1)%100 == 0:
+            inf = str(sum(losses)/len(losses))
+            print(inf)
+            logging.info(inf)
+            losses.clear()
+
+        if (episode+1)%5000 == 0: #5000
             # test
             print("Testing...")
             accuracies = []
@@ -257,11 +262,14 @@ def main():
             if test_accuracy > last_accuracy:
 
                 # save networks
-                torch.save(feature_encoder.state_dict(),str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
-                torch.save(relation_network.state_dict(),str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+                torch.save(feature_encoder.state_dict(),str("./models/miniimagenet_feature_encoder_" + EXPERIMENT_NAME +".pkl"))
+                torch.save(relation_network.state_dict(),str("./models/miniimagenet_relation_network_" + EXPERIMENT_NAME +".pkl"))
 
                 print("save networks for episode:",episode)
 
+                inf = str(episode) + ' ' + str(test_accuracy)
+                print(inf)
+                logging.info(inf)
                 last_accuracy = test_accuracy
 
 
