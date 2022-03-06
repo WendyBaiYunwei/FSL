@@ -4,7 +4,7 @@ import random
 import os
 import numpy as np
 from skimage import io
-import task_generator as tg
+import KD_tg as tg
 import torchvision.transforms as transforms
 
 class MiniImgnet(Dataset):
@@ -36,7 +36,7 @@ class MiniImgnet(Dataset):
             x = self.transform(x)
         y = int(self.train_labels[index])
         y = torch.tensor(y, dtype=torch.long)
-        return x, y, x_path
+        return x, y
 
     def __len__(self):
         return len(self.train_roots)

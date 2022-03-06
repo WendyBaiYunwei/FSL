@@ -105,7 +105,7 @@ class MiniImagenet(FewShotDataset):
         label = self.labels[idx]
         if self.target_transform is not None:
             label = self.target_transform(label)
-        return image, label, image_root
+        return image, label
 
 
 class ClassBalancedSampler(Sampler):

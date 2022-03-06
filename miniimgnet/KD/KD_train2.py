@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.optim.lr_scheduler import StepLR
 import numpy as np
-import task_generator as tg
+import KD_tg as tg
 import os
 import math
 import argparse
@@ -28,7 +28,7 @@ parser.add_argument("-r","--relation_dim",type = int, default = 8)
 parser.add_argument("-w","--class_num",type = int, default = 5)
 parser.add_argument("-s","--sample_num_per_class",type = int, default = 1)
 parser.add_argument("-b","--batch_num_per_class",type = int, default = 1)
-parser.add_argument("-e","--episode",type = int, default= 100000) #500000 ####
+parser.add_argument("-e","--episode",type = int, default= 500000) #500000 ####
 parser.add_argument("-t","--test_episode", type = int, default = 600)
 parser.add_argument("-l","--learning_rate", type = float, default = 0.0005)
 parser.add_argument("-g","--gpu",type=int, default=0)
@@ -48,7 +48,6 @@ TEST_EPISODE = args.test_episode
 LEARNING_RATE = args.learning_rate
 GPU = args.gpu
 HIDDEN_UNIT = args.hidden_unit
-ORDERED = args.ordered
 EXPERIMENT_NAME = args.name
 KD = args.kd
 
@@ -156,7 +155,7 @@ def main():
     relation_network_scheduler = StepLR(relation_network_optim,step_size=100000,gamma=0.5)
 
     if KD:
-        feature_encoder.load_state_dict(torch.load("./models/" + EXPERIMENT_NAME + "-stuEnc.pkl"))
+        feature_encoder.load_state_dict(torch.load("./models/" + '3-3-simpleKD' + "-stuEnc.pkl"))
         inf = "load feature encoder success"
         logging.info(inf)
         print(inf)
@@ -179,8 +178,8 @@ def main():
         batch_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=BATCH_NUM_PER_CLASS,split="test",shuffle=True) #true
 
         # sample datas
-        samples,sample_labels,supportNames = sample_dataloader.__iter__().next()
-        batches,batch_labels,batchQueryNames = batch_dataloader.__iter__().next()
+        samples,sample_labels = sample_dataloader.__iter__().next()
+        batches,batch_labels = batch_dataloader.__iter__().next()
         
         # calculate features
         sample_features = feature_encoder(Variable(samples).cuda(GPU)) # 5x64*5*5
@@ -230,8 +229,8 @@ def main():
 
                 num_per_class = 3
                 test_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=num_per_class,split="test",shuffle=True) #true
-                sample_images,sample_labels,_ = sample_dataloader.__iter__().next()
-                for test_images,test_labels, _ in test_dataloader:
+                sample_images,sample_labels = sample_dataloader.__iter__().next()
+                for test_images,test_labels in test_dataloader:
                     batch_size = test_labels.shape[0]
                     # calculate features
                     sample_features = feature_encoder(Variable(sample_images).cuda(GPU)) # 5x64

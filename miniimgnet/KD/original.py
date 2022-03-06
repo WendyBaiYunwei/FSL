@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import logging
-import task_generator as tg
+import KD_tg as tg
 from torch.autograd import Variable
 import numpy as np
 import scipy as sp

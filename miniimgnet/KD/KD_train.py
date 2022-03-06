@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import logging
-import task_generator as tg
+import KD_tg as tg
 from torch.autograd import Variable
 import torchvision.transforms as transforms
 import numpy as np
@@ -14,7 +14,7 @@ import math
 import os
 from skimage import io
 import cv2
-from task_generator import get_mini_imagenet_data_loader, get_mini_imagenet_data_loader_big
+from dataset import get_loader, get_loader_sm
 
 class TeacherClassifier(nn.Module):
     """docstring for RelationNetwork"""
@@ -157,7 +157,7 @@ class CNNEncoder(nn.Module):
         
 torch.manual_seed(0)
 LEARNING_RATE = 0.001
-EXPERIMENT_NAME = '3-2-simpleKD'
+EXPERIMENT_NAME = '3-3-simpleKD'
 CLASS_NUM = 5
 SAMPLE_NUM_PER_CLASS = 1
 BATCH_NUM_PER_CLASS = 15
@@ -212,14 +212,15 @@ def getBiggerImg(imgs):
         res.append(img)
     return torch.from_numpy(np.array(res))
 
-def test(enc, classifier, type, cifar):
+def test(enc, classifier, type):
     inf = 'testing on normal classifier...'
     print(inf)
     logging.info(inf)
+
     if type == 'teacher':
-        testLoader = cifar.test_loader_lg
+        testLoader = get_loader('test')
     else:
-        testLoader = cifar.test_loader
+        testLoader = get_loader_sm('test')
     enc.eval()
     classifier.eval()
     accuracy = 0
@@ -237,7 +238,8 @@ def test(enc, classifier, type, cifar):
     return accuracy
 
 def traditionalKD(stuEnc, stuClass, teacherEnc, teacherClass):
-    trainloader_lg = get_mini_imagenet_data_loader_big
+    metatrain_folders,metatest_folders = tg.mini_imagenet_folders()
+    trainloader_lg = get_loader('train')
     
     lFunc = nn.CrossEntropyLoss()
 
@@ -260,7 +262,7 @@ def traditionalKD(stuEnc, stuClass, teacherEnc, teacherClass):
 
                 optimizer.step()
             
-            acc = test(teacherEnc, teacherClass, 'teacher', loaders)
+            acc = test(teacherEnc, teacherClass, 'teacher')
             if acc > best_acc:
                 # save teacher classifier
                 torch.save(teacherClass.state_dict(),str("./models/teacher_norm_class"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
@@ -281,7 +283,7 @@ def traditionalKD(stuEnc, stuClass, teacherEnc, teacherClass):
     print(inf)
     logging.info(inf)
     losses = []
-    trainloader = get_mini_imagenet_data_loader
+    trainloader = get_loader_sm('train')
     for epoch in range(EPOCHS):
         logging.info(str(epoch))
         for x, y in trainloader:
@@ -305,7 +307,7 @@ def traditionalKD(stuEnc, stuClass, teacherEnc, teacherClass):
         print(inf)
         logging.info(inf)  
         if epoch > 20:
-            acc = test(stuEnc, stuClass, 'student', loaders)
+            acc = test(stuEnc, stuClass, 'student')
             if acc > best_acc:
                 torch.save(stuEnc.state_dict(),str("./models/" + EXPERIMENT_NAME + "-stuEnc.pkl"))
                 best_acc = acc
@@ -313,9 +315,10 @@ def traditionalKD(stuEnc, stuClass, teacherEnc, teacherClass):
 if __name__ == '__main__': # load existing model
     logging.basicConfig(filename=EXPERIMENT_NAME + '.txt', level=logging.INFO)
 
-    resnet18 = models.resnet18(pretrained=True)
+    resnet18 = models.resnet18(pretrained=False)
     modules=list(resnet18.children())[:-2]
     teacherEnc=nn.Sequential(*modules)
+    teacherEnc.load_state_dict(torch.load('./models/teacher_enc.pkl'))
     teacherEnc.cuda()
     for param in teacherEnc.parameters():
         param.requires_grad = False

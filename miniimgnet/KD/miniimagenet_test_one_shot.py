@@ -139,13 +139,10 @@ def main():
     feature_encoder.cuda(GPU)
     relation_network.cuda(GPU)
 
-
-    if os.path.exists(str("./models/stu_enc" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
-        feature_encoder.load_state_dict(torch.load(str("./models/stu_enc" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-        print("load feature encoder success")
-    if os.path.exists(str("./models/stu_class"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
-        relation_network.load_state_dict(torch.load(str("./models/stu_class"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-        print("load relation network success")
+    feature_encoder.load_state_dict(torch.load('./models/miniimagenet_feature_encoder_3-3-simpleKD.pkl'))
+    print("load feature encoder success")
+    relation_network.load_state_dict(torch.load('./models/miniimagenet_relation_network_3-3-simpleKD.pkl'))
+    print("load relation network success")
 
     # Step 3: build graph
 
