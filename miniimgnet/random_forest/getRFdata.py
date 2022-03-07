@@ -1,55 +1,58 @@
 # input data
 # output an RF labeller class that can train and predict
 
-from ctypes.wintypes import LONG
-from skimage import io
 import numpy as np
 import task_generator as tg
 import os
 import random
-from sklearn.metrics import accuracy_score
 import pickle
 import json
 
 
 class RFdata():
-    def getData(self, classStart, classEnd):
-        diffLevel = 20
-
+    def getData(self, classStart, classEnd, type='Train'):
+        diffLevel = 30 #30, 7, 200, 4: 58.96%
+        iterations = 7
         Xs = []
         Ys = []
         for classI in range(classStart, classEnd):
-            embeddingI = classI * 600
-            cur = np.expand_dims(self.embeddings[embeddingI], axis = 0)
-            cur = np.repeat(cur, diffLevel, 0) #20x512
-            
-            # get sim
-            simImgs = self.adjList[self.nameList[embeddingI]][:diffLevel]
-            simImgEs = []
-            for name in simImgs:
-                idx = self.nameToIdx[name[1]]
-                simImgEs.append(self.embeddings[idx])
+            forbiddenIndices = set([i for i in range(classI, classI + 600)])
+            fullIndices = set([i for i in range(classStart * 600, classEnd * 600)])
+            indices = fullIndices - forbiddenIndices
+            for i in range(iterations):
+                embeddingI = classI * 600 + i
+                cur = np.expand_dims(self.embeddings[embeddingI], axis = 0)
+                cur = np.repeat(cur, diffLevel, 0) #20x512
+                
+                # get sim
+                if type == 'Train':
+                    simImgs = self.adjList[self.nameList[embeddingI]][:diffLevel]
+                else:
+                    simImgs = random.sample(self.adjList[self.nameList[embeddingI]], k = diffLevel)
+                
+                simImgEs = []
+                for name in simImgs:
+                    idx = self.nameToIdx[name[1]]
+                    simImgEs.append(self.embeddings[idx])
 
-            simImgs = np.stack(simImgEs).squeeze()
-            concats = np.concatenate([cur, simImgs], axis = 1)
-            Xs.append(concats)
-            labels = np.repeat(np.ones(1, dtype = np.long), diffLevel, 0)
-            Ys.append(labels)
+                simImgs = np.stack(simImgEs).squeeze()
+                concats = np.concatenate([cur, simImgs], axis = 1)
+                Xs.append(concats)
+                labels = np.repeat(np.ones(1, dtype = np.long), diffLevel, 0)
+                Ys.append(labels)
 
-            # get diff
-            indices = [i for i in range(classStart, classEnd)]
-            indices.remove(classI)
-            classIs = np.array(random.sample(indices, k = diffLevel))
-            offset = random.sample([i for i in range(600)], k = 1)[0]
-            diffImgs = self.embeddings[classIs*600 + offset].squeeze()
-            concats = np.concatenate([cur, diffImgs], axis = 1)
-            Xs.append(concats)
-            labels = np.repeat(np.zeros(1, dtype = np.long), diffLevel, 0)
-            Ys.append(labels)
+                # get diff
+                indices = random.sample(indices, k = diffLevel)
+                diffImgs = self.embeddings[indices].squeeze()
+                concats = np.concatenate([cur, diffImgs], axis = 1)
+                Xs.append(concats)
+                labels = np.repeat(np.zeros(1, dtype = np.long), diffLevel, 0)
+                Ys.append(labels)
 
         Xs = np.stack(Xs).reshape(-1, 512 * 2)
         Ys = np.stack(Ys).reshape(-1, 1)
- 
+
+        print(Xs.shape, Ys.shape)
         return Xs, Ys
 
     def __init__(self):
@@ -64,11 +67,11 @@ class RFdata():
         with open('embedding_sim.pkl', 'rb') as f: 
             self.adjList = pickle.load(f)
 
-        self.trainClassSize = 43
+        self.trainClassSize = 50
         self.testClassSize = 64 - self.trainClassSize
 
         self.trainX, self.trainY = self.getData(0, self.trainClassSize)
-        self.testX, self.testY = self.getData(self.trainClassSize, 64)
+        self.testX, self.testY = self.getData(self.trainClassSize, 64, 'test')
 
         with open('rf_trainX.pkl', 'wb') as f:
             pickle.dump(self.trainX, f)
