@@ -1,4 +1,10 @@
-# concatenate random forest prediction with input image
+#-------------------------------------
+# Project: Learning to Compare: Relation Network for Few-Shot Learning
+# Date: 2017.9.21
+# Author: Flood Sung
+# All Rights Reserved
+#-------------------------------------
+
 
 import torch
 import torch.nn as nn
@@ -13,6 +19,7 @@ import argparse
 import scipy as sp
 import scipy.stats
 import pickle
+from rfClassifier import RF
 
 torch.manual_seed(0)
 
@@ -21,10 +28,10 @@ parser.add_argument("-f","--feature_dim",type = int, default = 64)
 parser.add_argument("-r","--relation_dim",type = int, default = 8)
 parser.add_argument("-w","--class_num",type = int, default = 5)
 parser.add_argument("-s","--sample_num_per_class",type = int, default = 1)
-parser.add_argument("-b","--batch_num_per_class",type = int, default = 1)
-parser.add_argument("-e","--episode",type = int, default= 2000) #500000 ####
+parser.add_argument("-b","--batch_num_per_class",type = int, default = 15)
+parser.add_argument("-e","--episode",type = int, default= 500000)
 parser.add_argument("-t","--test_episode", type = int, default = 600)
-parser.add_argument("-l","--learning_rate", type = float, default = 0.0005)
+parser.add_argument("-l","--learning_rate", type = float, default = 0.001)
 parser.add_argument("-g","--gpu",type=int, default=0)
 parser.add_argument("-u","--hidden_unit",type=int,default=10)
 parser.add_argument("-o","--ordered",type=bool,default=True)
@@ -83,9 +90,9 @@ class CNNEncoder(nn.Module):
 
 class RelationNetwork(nn.Module):
     """docstring for RelationNetwork"""
-    def __init__(self,input_size,hidden_size, class_num): ####
+    def __init__(self,input_size,hidden_size):
         super(RelationNetwork, self).__init__()
-        # self.label_emb = nn.Embedding(1, 19 * 19) #one hot label to input size *3*3
+        self.embedding = nn.Embedding(100, 19*19)
         self.layer1 = nn.Sequential(
                         nn.Conv2d(128 + 1,64,kernel_size=3,padding=0),
                         nn.BatchNorm2d(64, momentum=1, affine=True),
@@ -99,24 +106,19 @@ class RelationNetwork(nn.Module):
         self.fc1 = nn.Linear(input_size*3*3,hidden_size)
         self.fc2 = nn.Linear(hidden_size,1)
 
-    def forward(self,x,label):
-        # print(x.shape) #25, 128, 19, 19
-        label = torch.flatten(label)
-        # l_embed = self.label_emb(torch.tensor(label, dtype=torch.long))
-        l_embed = torch.zeros(25, 1, 19, 19)
-        for i, is_one in enumerate(label):
-            if is_one:
-                l_embed[i, :, :, :] = torch.ones(1, 1, 19, 19)
-        l_embed = l_embed.cuda(GPU)
-        xy = torch.cat([x, l_embed], dim = 1)
-        out = self.layer1(xy)
+    def forward(self,x, rfLabels):
+        labels = self.embedding(rfLabels)
+        labels = labels.unsqueeze(1)
+        labels = labels.reshape((-1, 1, 19, 19))
+        x = torch.concat([x, labels], dim = 1)
+        out = self.layer1(x)
         out = self.layer2(out)
         out = out.view(out.size(0),-1)
         out = F.relu(self.fc1(out))
-        out = F.sigmoid(self.fc2(out))
+        out = torch.sigmoid(self.fc2(out))
         return out
 
-def weights_init(m):
+def weights_init(m):#to-do: add logging
     classname = m.__class__.__name__
     if classname.find('Conv') != -1:
         n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -131,7 +133,6 @@ def weights_init(m):
         m.weight.data.normal_(0, 0.01)
         m.bias.data = torch.ones(m.bias.data.size())
 
-
 def main():
     # Step 1: init data folders
     print("init data folders")
@@ -142,7 +143,7 @@ def main():
     print("init neural networks")
 
     feature_encoder = CNNEncoder()
-    relation_network = RelationNetwork(FEATURE_DIM,RELATION_DIM, CLASS_NUM)
+    relation_network = RelationNetwork(FEATURE_DIM,RELATION_DIM)
 
     feature_encoder.apply(weights_init)
     relation_network.apply(weights_init)
@@ -158,19 +159,20 @@ def main():
     if os.path.exists(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
         feature_encoder.load_state_dict(torch.load(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
         print("load feature encoder success")
-    # if os.path.exists(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
-    #     relation_network.load_state_dict(torch.load(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-    #     print("load relation network success")
+    if os.path.exists(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
+        relation_network.load_state_dict(torch.load(str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
+        print("load relation network success")
 
+    print("Prepare Random Forest Classifier")
+    rf = RF()
     # Step 3: build graph
     print("Training...")
 
     last_accuracy = 0.0
-    pToDiff = {}
 
     for episode in range(EPISODE):
-        feature_encoder_scheduler.step(episode)
-        relation_network_scheduler.step(episode)
+        feature_encoder_scheduler.step()
+        relation_network_scheduler.step()
 
         # init dataset
         # sample_dataloader is to obtain previous samples for compare
@@ -182,6 +184,7 @@ def main():
         # sample datas
         samples,sample_labels,supportNames = sample_dataloader.__iter__().next()
         batches,batch_labels,batchQueryNames = batch_dataloader.__iter__().next()
+
         # calculate features
         sample_features = feature_encoder(Variable(samples).cuda(GPU)) # 5x64*5*5
         batch_features = feature_encoder(Variable(batches).cuda(GPU)) # 20x64*5*5
@@ -193,23 +196,17 @@ def main():
         batch_features_ext = batch_features.unsqueeze(0).repeat(SAMPLE_NUM_PER_CLASS*CLASS_NUM,1,1,1,1) #query
         batch_features_ext = torch.transpose(batch_features_ext,0,1)
         relation_pairs = torch.cat((sample_features_ext,batch_features_ext),2).view(-1,FEATURE_DIM*2,19,19)
-        one_hot_labels = Variable(torch.zeros(BATCH_NUM_PER_CLASS*CLASS_NUM, CLASS_NUM).scatter_(1, batch_labels.view(-1,1), 1)).cuda(GPU)
-        relations = relation_network(relation_pairs, one_hot_labels).view(-1,CLASS_NUM*SAMPLE_NUM_PER_CLASS)
-        mse = nn.MSELoss().cuda(GPU)
-        loss = mse(relations,one_hot_labels)
-
-        # get k
+        # relation pairs: {class1query1...class1query15,class2query1...}
+        # rf relations are rounded to the nearest 0.01
+        rfRelations = rf.getBatchRelScores(supportNames, batchQueryNames) #(relation_pairs_sizex1) -> embedding as additional channel
+        relations = relation_network(relation_pairs, rfRelations).view(-1,CLASS_NUM*SAMPLE_NUM_PER_CLASS)
+        # print(sample_labels)
+        # print(batch_labels)
+        # print(rfRelations)
         # exit()
-        if ORDERED:
-            with torch.no_grad():
-                ks = []
-                for i in range(5):
-                    correctClass = batch_labels.clone()[i].item()
-                    k = getK(relations.clone()[i], correctClass)
-                    ks.append(k)
-                
-                m = torch.mean(torch.stack(ks))
-                pToDiff[(str(batchQueryNames), str(batch_labels), str(supportNames))] = m
+        mse = nn.MSELoss().cuda(GPU)
+        one_hot_labels = Variable(torch.zeros(BATCH_NUM_PER_CLASS*CLASS_NUM, CLASS_NUM).scatter_(1, batch_labels.view(-1,1), 1)).cuda(GPU)
+        loss = mse(relations,one_hot_labels)
 
         # training
         feature_encoder.zero_grad()
@@ -217,33 +214,26 @@ def main():
 
         loss.backward()
 
-        torch.nn.utils.clip_grad_norm(feature_encoder.parameters(),0.5)
-        torch.nn.utils.clip_grad_norm(relation_network.parameters(),0.5)
+        torch.nn.utils.clip_grad_norm_(feature_encoder.parameters(),0.5)
+        torch.nn.utils.clip_grad_norm_(relation_network.parameters(),0.5)
 
         feature_encoder_optim.step()
         relation_network_optim.step()
 
-        if (episode+1)%100 == 0:
-                print("episode:",episode+1,"loss",loss.item())
-
-        if episode%(EPISODE - 1) == 0: #5000
-            if ORDERED and episode > 0:
-                print("Saving the order")
-                with open('pToDiff.pkl', 'wb') as out:
-                    pickle.dump(pToDiff, out)
+        if episode%5000 == 0: #5000
             # test
             print("Testing...")
             accuracies = []
             for i in range(TEST_EPISODE):
                 total_rewards = 0
                 counter = 0
-                task = tg.MiniImagenetTask(metatest_folders,CLASS_NUM,1,1)
+                task = tg.MiniImagenetTask(metatest_folders,CLASS_NUM,1,15)
                 sample_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=1,split="train",shuffle=False)
 
                 num_per_class = 3
                 test_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=num_per_class,split="test",shuffle=True) #true
-                sample_images,sample_labels,_ = sample_dataloader.__iter__().next()
-                for test_images,test_labels, _ in test_dataloader:
+                sample_images,sample_labels,supportNames = sample_dataloader.__iter__().next()
+                for test_images,test_labels, batchQueryNames in test_dataloader:
                     batch_size = test_labels.shape[0]
                     # calculate features
                     sample_features = feature_encoder(Variable(sample_images).cuda(GPU)) # 5x64
@@ -256,8 +246,9 @@ def main():
                     test_features_ext = test_features.unsqueeze(0).repeat(1*CLASS_NUM,1,1,1,1)
                     test_features_ext = torch.transpose(test_features_ext,0,1)
                     relation_pairs = torch.cat((sample_features_ext,test_features_ext),2).view(-1,FEATURE_DIM*2,19,19)
-                    test_label_one_hot = Variable(torch.zeros(BATCH_NUM_PER_CLASS*CLASS_NUM, CLASS_NUM).scatter_(1, test_labels.view(-1,1), 1)).cuda(GPU)
-                    relations = relation_network(relation_pairs, test_label_one_hot).view(-1,CLASS_NUM)
+                    rfRelations = rf.getBatchRelScoresVal(supportNames, batchQueryNames) 
+                    relations = relation_network(relation_pairs, rfRelations).view(-1,CLASS_NUM)
+                    
 
                     _,predict_labels = torch.max(relations.data,1)
 
@@ -272,15 +263,15 @@ def main():
 
             print("test accuracy:",test_accuracy,"h:",h)
 
-            # if test_accuracy > last_accuracy:
+            if test_accuracy > last_accuracy:
 
-            #     # save networks
-            #     torch.save(feature_encoder.state_dict(),str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
-            #     torch.save(relation_network.state_dict(),str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+                # save networks
+                torch.save(feature_encoder.state_dict(),str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+                torch.save(relation_network.state_dict(),str("./models/miniimagenet_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
 
-            #     print("save networks for episode:",episode)
+                print("save networks for episode:",episode)
 
-            #     last_accuracy = test_accuracy
+                last_accuracy = test_accuracy
 
 
 if __name__ == '__main__':
