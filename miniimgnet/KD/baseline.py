@@ -22,18 +22,18 @@ import neptune.new as neptune
 torch.manual_seed(0)
 
 parser = argparse.ArgumentParser(description="One Shot Visual Recognition")
-parser.add_argument("-f","--feature_dim",type = int, default = 512)
+parser.add_argument("-f","--feature_dim",type = int, default = 640)#td, 512
 parser.add_argument("-r","--relation_dim",type = int, default = 8)
 parser.add_argument("-w","--class_num",type = int, default = 5)
 parser.add_argument("-s","--sample_num_per_class",type = int, default = 1)
-parser.add_argument("-b","--batch_num_per_class",type = int, default = 15)
+parser.add_argument("-b","--batch_num_per_class",type = int, default = 5)
 parser.add_argument("-e","--episode",type = int, default= 100000) #500000 ####
 parser.add_argument("-t","--test_episode", type = int, default = 600)
 parser.add_argument("-l","--learning_rate", type = float, default = 0.001)
-parser.add_argument("-g","--gpu",type=int, default=1)
+parser.add_argument("-g","--gpu",type=str, default='cuda:0')
 parser.add_argument("-u","--hidden_unit",type=int,default=10)
-parser.add_argument("-n","--name",type=str,default='51-res18-baseline')
-parser.add_argument("-nt","--type",type=str,default='resnet18')
+parser.add_argument("-n","--name",type=str,default='51-res12-baseline')
+parser.add_argument("-nt","--type",type=str,default='resnet12')
 args = parser.parse_args()
 
 # Hyper Parameters
@@ -49,8 +49,8 @@ GPU = args.gpu
 HIDDEN_UNIT = args.hidden_unit
 EXPERIMENT_NAME = args.name
 NET_TYPE = args.type
-DIM = 5
-DIM2 = 10
+DIM = 3
+DIM2 = 14
 if NET_TYPE == 'resnet18':
     DIM = 3
     DIM2 = 7
@@ -68,15 +68,16 @@ class RelationNetwork(nn.Module):
     def __init__(self,in_channel, hidden_size=8):
         super(RelationNetwork, self).__init__()
         self.layer1 = nn.Sequential(
-                        nn.Conv2d(in_channel*2,512,kernel_size=1,padding=0),
-                        nn.BatchNorm2d(512, momentum=1, affine=True),
-                        nn.ReLU())
-        self.layer2 = nn.Sequential(
-                        nn.Conv2d(512,256,kernel_size=1,padding=0),
+                        nn.Conv2d(in_channel*2,256,kernel_size=1,padding=0),
                         nn.BatchNorm2d(256, momentum=1, affine=True),
                         nn.ReLU())
+        self.layer2 = nn.Sequential(
+                        nn.Conv2d(256,128,kernel_size=1,padding=0),
+                        nn.BatchNorm2d(128, momentum=1, affine=True),
+                        nn.ReLU(),
+                        nn.MaxPool2d(2)) #td
         self.layer3 = nn.Sequential(
-                        nn.Conv2d(256,64,kernel_size=1,padding=0),
+                        nn.Conv2d(128,64,kernel_size=1,padding=0),
                         nn.BatchNorm2d(64, momentum=1, affine=True),
                         nn.ReLU(),
                         nn.MaxPool2d(2))
@@ -134,11 +135,11 @@ def main():
         resnet18 = models.resnet18(pretrained=True)
         modules=list(resnet18.children())[:-2]
         feature_encoder=nn.Sequential(*modules)
-    for param in feature_encoder.parameters():
-        param.requires_grad = False
+        for param in feature_encoder.parameters():
+            param.requires_grad = False
     relation_network = RelationNetwork(FEATURE_DIM)
-    feature_encoder.cuda(GPU)
-    relation_network.cuda(GPU)
+    feature_encoder.to(device=GPU)
+    relation_network.to(device=GPU)
 
     feature_encoder_optim = torch.optim.Adam(feature_encoder.parameters(),lr=LEARNING_RATE)
     relation_network_optim = torch.optim.Adam(relation_network.parameters(),lr=LEARNING_RATE)
@@ -153,7 +154,7 @@ def main():
         # init dataset
         # sample_dataloader is to obtain previous samples for compare
         # batch_dataloader is to batch samples for training
-        task = tg.MiniImagenetTask(metatrain_folders,CLASS_NUM,SAMPLE_NUM_PER_CLASS,BATCH_NUM_PER_CLASS)
+        task = tg.MiniImagenetTask(metatrain_folders,CLASS_NUM,SAMPLE_NUM_PER_CLASS,BATCH_NUM_PER_CLASS) #td
         sample_dataloader = tg.get_mini_imagenet_data_loader_big(task,num_per_class=SAMPLE_NUM_PER_CLASS,\
             split="train",shuffle=False)
         batch_dataloader = tg.get_mini_imagenet_data_loader_big(task,num_per_class=BATCH_NUM_PER_CLASS,\
@@ -164,9 +165,8 @@ def main():
         batches,batch_labels = batch_dataloader.__iter__().next()
         
         # calculate features
-        sample_features = feature_encoder(Variable(samples).cuda(GPU)) # 5x640*5*5
-        batch_features = feature_encoder(Variable(batches).cuda(GPU)) # 20x640*5*5
-
+        sample_features = feature_encoder(Variable(samples).to(device=GPU)) # 5x640*5*5
+        batch_features = feature_encoder(Variable(batches).to(device=GPU)) # 20x640*5*5
         # calculate relations
         # each batch sample link to every samples to calculate relations
         # to form a 100x128 matrix for relation network
@@ -177,9 +177,9 @@ def main():
         relation_pairs = torch.cat((sample_features_ext,batch_features_ext),2).view(-1,FEATURE_DIM*2,DIM2,DIM2) #td, 55
         relations = relation_network(relation_pairs).view(-1,CLASS_NUM*SAMPLE_NUM_PER_CLASS)
 
-        mse = nn.MSELoss().cuda(GPU)
+        mse = nn.MSELoss().to(device=GPU)
         one_hot_labels = Variable(torch.zeros(BATCH_NUM_PER_CLASS*CLASS_NUM, CLASS_NUM).scatter_(1,\
-            batch_labels.view(-1,1), 1)).cuda(GPU)
+            batch_labels.view(-1,1), 1)).to(device=GPU)
         loss = mse(relations,one_hot_labels)
 
         # training
@@ -197,6 +197,7 @@ def main():
 
         if (episode+1)%100 == 0:
             inf = str(sum(losses)/len(losses))
+            print(episode, inf)
             run["loss"].log(inf)
             losses.clear()
 
@@ -217,8 +218,8 @@ def main():
                 for test_images,test_labels in test_dataloader:
                     batch_size = test_labels.shape[0]
                     # calculate features
-                    sample_features = feature_encoder(Variable(sample_images).cuda(GPU)) # 5x64
-                    test_features = feature_encoder(Variable(test_images).cuda(GPU)) # 20x64
+                    sample_features = feature_encoder(Variable(sample_images).to(device=GPU)) # 5x64
+                    test_features = feature_encoder(Variable(test_images).to(device=GPU)) # 20x64
 
                     sample_features_ext = sample_features.unsqueeze(0).repeat(batch_size,1,1,1,1)
                     test_features_ext = test_features.unsqueeze(0).repeat(1*CLASS_NUM,1,1,1,1)
