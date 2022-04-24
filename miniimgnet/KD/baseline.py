@@ -50,7 +50,7 @@ HIDDEN_UNIT = args.hidden_unit
 EXPERIMENT_NAME = args.name
 NET_TYPE = args.type
 DIM = 5
-DIM2 = DIM
+DIM2 = 10
 if NET_TYPE == 'resnet18':
     DIM = 3
     DIM2 = 7
@@ -80,7 +80,7 @@ class RelationNetwork(nn.Module):
                         nn.BatchNorm2d(64, momentum=1, affine=True),
                         nn.ReLU(),
                         nn.MaxPool2d(2))
-        self.fc1 = nn.Linear(64*DIM*DIM,hidden_size) #td: 5,5
+        self.fc1 = nn.Linear(64*DIM*DIM,hidden_size)
         self.fc2 = nn.Linear(hidden_size,1)
 
     def forward(self,x):
@@ -211,7 +211,8 @@ def main():
                 sample_dataloader = tg.get_mini_imagenet_data_loader_big(task,num_per_class=1,split="train",shuffle=False)
 
                 num_per_class = 3
-                test_dataloader = tg.get_mini_imagenet_data_loader_big(task,num_per_class=num_per_class,split="test",shuffle=True)
+                test_dataloader = tg.get_mini_imagenet_data_loader_big(task,num_per_class=num_per_class,split="test",\
+                    shuffle=True)
                 sample_images,sample_labels = sample_dataloader.__iter__().next()
                 for test_images,test_labels in test_dataloader:
                     batch_size = test_labels.shape[0]
@@ -241,8 +242,10 @@ def main():
             if test_accuracy > last_accuracy:
 
                 # save networks
-                torch.save(feature_encoder.state_dict(),str("./models/miniimagenet_feature_encoder_" + EXPERIMENT_NAME +".pkl"))
-                torch.save(relation_network.state_dict(),str("./models/miniimagenet_relation_network_" + EXPERIMENT_NAME +".pkl"))
+                torch.save(feature_encoder.state_dict(),str("./models/miniimagenet_feature_encoder_" +\
+                     EXPERIMENT_NAME +".pkl"))
+                torch.save(relation_network.state_dict(),str("./models/miniimagenet_relation_network_" +\
+                    EXPERIMENT_NAME +".pkl"))
 
                 print("save networks for episode:",episode)
 
