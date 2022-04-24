@@ -46,7 +46,7 @@ class MiniImgnet(Dataset):
 
 def get_loader(type):
     normalize = transforms.Normalize(mean=[0.92206, 0.92206, 0.92206], std=[0.08426, 0.08426, 0.08426])
-    transform=transforms.Compose([transforms.ToTensor(),normalize,transforms.Resize(224)])
+    transform=transforms.Compose([transforms.ToTensor(),normalize,transforms.Resize(168)])
     dataset = MiniImgnet(type, transform=transform)
     loader = DataLoader(dataset, batch_size=32)
     return loader

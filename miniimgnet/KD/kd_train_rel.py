@@ -216,7 +216,7 @@ def main():
         one_hot_labels = Variable(torch.zeros(BATCH_NUM_PER_CLASS*CLASS_NUM, CLASS_NUM).scatter_(1,\
             batch_labels.view(-1,1), 1)).cuda(GPU)
         
-        teacher_enc = ResNet()
+        teacher_enc = ResNet() # td: changge to resnet18 and load the baseline feature and rel
         model_dict = feature_encoder.state_dict()        
         pretrained_dict = torch.load("../models/Res12-pre.pth")['params']
         pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
@@ -228,7 +228,7 @@ def main():
         for param in teacher_enc.parameters():
             param.requires_grad = False
 
-        teacher_rel = TeacherRel()
+        teacher_rel = TeacherRel() #td, other
         for param in teacher_rel.parameters():
             param.requires_grad = False
 
