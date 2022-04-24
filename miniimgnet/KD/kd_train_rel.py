@@ -27,7 +27,7 @@ parser.add_argument("-f","--feature_dim",type = int, default = 640)#td, 512
 parser.add_argument("-r","--relation_dim",type = int, default = 8)
 parser.add_argument("-w","--class_num",type = int, default = 5)
 parser.add_argument("-s","--sample_num_per_class",type = int, default = 1)
-parser.add_argument("-b","--batch_num_per_class",type = int, default = 5)
+parser.add_argument("-b","--batch_num_per_class",type = int, default = 15)
 parser.add_argument("-e","--episode",type = int, default= 100000) #500000 ####
 parser.add_argument("-t","--test_episode", type = int, default = 600)
 parser.add_argument("-l","--learning_rate", type = float, default = 0.001)
@@ -94,22 +94,23 @@ class RelationNetwork(nn.Module):
         return out
 
 class StuRelationNetwork(nn.Module):
-    """docstring for RelationNetwork"""
-    def __init__(self,in_channel, hidden_size=8):
+    """docstring for StuRelationNetwork"""
+    def __init__(self,hidden_size=8):
         super(StuRelationNetwork, self).__init__()
         self.layer1 = nn.Sequential(
-                        nn.Conv2d(in_channel*2,256,kernel_size=1,padding=0),
-                        nn.BatchNorm2d(256, momentum=1, affine=True),
+                        nn.Conv2d(640*2,512,kernel_size=1,padding=0),
+                        nn.BatchNorm2d(512, momentum=1, affine=True),
                         nn.ReLU())
         self.layer2 = nn.Sequential(
-                        nn.Conv2d(256,128,kernel_size=1,padding=0),
-                        nn.BatchNorm2d(128, momentum=1, affine=True),
-                        nn.ReLU()) #td
+                        nn.Conv2d(512,256,kernel_size=1,padding=0),
+                        nn.BatchNorm2d(256, momentum=1, affine=True),
+                        nn.ReLU())
         self.layer3 = nn.Sequential(
-                        nn.Conv2d(128,64,kernel_size=1,padding=0),
+                        nn.Conv2d(256,64,kernel_size=1,padding=0),
                         nn.BatchNorm2d(64, momentum=1, affine=True),
                         nn.ReLU())
-        self.fc1 = nn.Linear(64*DIM*DIM,hidden_size)
+                        # nn.MaxPool2d(2))
+        self.fc1 = nn.Linear(64*5*5,hidden_size)
         self.fc2 = nn.Linear(hidden_size,1)
 
     def forward(self,x):
@@ -141,7 +142,7 @@ def loss_fn_kd(outputs, labels, teacher_outputs):
     alpha = 0.9
     KD_loss = nn.KLDivLoss()(F.log_softmax(outputs/T, dim=1),
                              F.softmax(teacher_outputs/T, dim=1)) * (alpha * T * T) + \
-              F.cross_entropy(outputs, labels.long().cuda()) * (1. - alpha)
+              F.cross_entropy(outputs, labels.cuda(GPU)) * (1. - alpha)
 
     return KD_loss
 
@@ -242,7 +243,7 @@ def main():
         batch_features_ext = batch_features.unsqueeze(0).repeat(SAMPLE_NUM_PER_CLASS*CLASS_NUM,1,1,1,1) #query
         batch_features_ext = torch.transpose(batch_features_ext,0,1)
 
-        relation_pairs = torch.cat((sample_features_ext,batch_features_ext),2).view(-1,FEATURE_DIM*2,14,14)
+        relation_pairs = torch.cat((sample_features_ext,batch_features_ext),2).view(-1,FEATURE_DIM*2,5,5)
         relations = stu_rel(relation_pairs).view(-1,CLASS_NUM*SAMPLE_NUM_PER_CLASS)
 
         one_hot_labels = Variable(torch.zeros(BATCH_NUM_PER_CLASS*CLASS_NUM, CLASS_NUM).scatter_(1,\
@@ -268,10 +269,10 @@ def main():
         if (episode+1)%100 == 0:
             inf = str(sum(losses)/len(losses))
             print(inf)
-            run["loss"].log(inf)
+            run["loss"].log(sum(losses)/len(losses))
             losses.clear()
 
-        if (episode+1)%5000 == 0: #5000
+        if (episode)%5000 == 0: #5000
             # test
             print("Testing...")
             accuracies = []
@@ -284,7 +285,7 @@ def main():
 
                 num_per_class = 3
                 test_dataloader = tg.get_mini_imagenet_data_loader(task,num_per_class=num_per_class,\
-                    plit="test",shuffle=True)
+                    split="test",shuffle=True)
                 sample_images,sample_labels = sample_dataloader.__iter__().next()
                 for test_images,test_labels in test_dataloader:
                     batch_size = test_labels.shape[0]
@@ -298,7 +299,7 @@ def main():
                     sample_features_ext = sample_features.unsqueeze(0).repeat(batch_size,1,1,1,1)
                     test_features_ext = test_features.unsqueeze(0).repeat(1*CLASS_NUM,1,1,1,1)
                     test_features_ext = torch.transpose(test_features_ext,0,1)
-                    relation_pairs = torch.cat((sample_features_ext,test_features_ext),2).view(-1,FEATURE_DIM*2,14,14)
+                    relation_pairs = torch.cat((sample_features_ext,test_features_ext),2).view(-1,FEATURE_DIM*2,5,5)
                     relations = stu_rel(relation_pairs).view(-1,CLASS_NUM)
 
                     _,predict_labels = torch.max(relations.data,1)
@@ -324,7 +325,7 @@ def main():
 
                 inf = str(episode) + ' ' + str(test_accuracy)
                 print(inf)
-                run["val_acc"].log(inf)
+                run["val_acc"].log(test_accuracy)
                 last_accuracy = test_accuracy
     run.stop()
 
