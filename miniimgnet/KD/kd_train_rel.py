@@ -204,9 +204,13 @@ def main():
     resnet18 = models.resnet18(pretrained=True)
     modules=list(resnet18.children())[:-2]
     teacher_enc=nn.Sequential(*modules)
+    teacher_enc.load_state_dict(torch.load("./models/miniimagenet_feature_encoder_" +\
+                     '51-res18-baseline' +".pkl"))
     for param in teacher_enc.parameters():
         param.requires_grad = False
     teacher_rel = RelationNetwork(512)
+    teacher_rel.load_state_dict(torch.load("./models/miniimagenet_relation_network_" +\
+                     '51-res18-baseline' +".pkl"))
     for param in teacher_rel.parameters():
         param.requires_grad = False
     teacher_enc.cuda(GPU)
